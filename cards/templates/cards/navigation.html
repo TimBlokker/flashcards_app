@@ -1,0 +1,7 @@
+{% load cards_tags %}
+<nav>
+    <a href="{% url 'card-list' %}">🗂 All Cards</a>
+    {% repeat_box_as_link %}
+    {% boxes_as_links %}
+
+</nav>
