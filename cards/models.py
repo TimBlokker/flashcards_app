@@ -34,8 +34,8 @@ class Card(models.Model):
         new_box = self.box + 1 if solved else BOXES[0]
         if new_box in BOXES:
             self.box = new_box
+            self.date_moved = datetime.datetime.now(datetime.timezone.utc)
             self.save()
-            date_moved = datetime.datetime.now(datetime.timezone.utc)
         return self
 
     @property    
