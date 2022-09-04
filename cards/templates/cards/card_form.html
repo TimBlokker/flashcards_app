@@ -1,6 +1,6 @@
 {% extends "cards/base_cards.html" %}
 {% block content %}
-  {% if card %}
+   {% if card %}
        <h2>✏️ Edit Card</h2>
    {% else %}
        <h2>✨ Create New Card</h2>
@@ -8,7 +8,7 @@
     <form method="post">
         {% csrf_token %}
         {{ form.as_p }}
-        <input type="submit" value="Save Card">
+        <input type="submit" value="Save Card"> 
     </form>
     <a href="{% url 'card-list' %}">
         Cancel

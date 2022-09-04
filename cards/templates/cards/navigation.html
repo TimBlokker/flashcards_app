@@ -1,7 +1,8 @@
 {% load cards_tags %}
 <nav>
-    <a href="{% url 'card-list' %}">🗂 All Cards</a>
-    {% repeat_box_as_link %}
-    {% boxes_as_links %}
+    <a href="{% url 'fiter-categories' %}">🗂 Filter Cards </a>
+    <a href="{% url 'card-list' %}">🗂  Cards for {{ category }}</a>
+    {% repeat_box_as_link category %}
+    {% boxes_as_links category %}
 
 </nav>

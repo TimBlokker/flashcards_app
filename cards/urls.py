@@ -4,6 +4,11 @@ from . import views
 urlpatterns = [
     path(
         "",
+        views.FilterView.as_view(),
+        name="fiter-categories"
+    ),
+     path(
+        "list",
         views.CardListView.as_view(),
         name="card-list"
     ),
@@ -26,5 +31,5 @@ urlpatterns = [
         "repeat",
         views.CardRepeatView.as_view(),
         name="todo-list"
-    ),
+    ), 
 ]
