@@ -58,7 +58,7 @@ class Card(models.Model):
     def to_repeat(self):
         now = datetime.datetime.now(datetime.timezone.utc)
         min_age = {
-        1:-1,
+        1:1,
         2:2,
         3:4,
         4:7,
