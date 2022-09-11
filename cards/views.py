@@ -5,6 +5,7 @@ from django.views.generic import (
     ListView,
     CreateView,
     UpdateView,
+    DeleteView,
 )
 from itertools import chain
 from .models import Card
@@ -19,7 +20,7 @@ class FilterView(ListView):
     model = Card
     form_class = CardCategoriesFilterForm
     template = "cards/filter_category.html"
-    initial = {'category': 'F6'}
+    initial = {'category': 'F6',"language":'de'}
     
     def get_queryset(self):
         return Card.objects.all().order_by("box", "-date_created")
@@ -34,10 +35,14 @@ class FilterView(ListView):
             form = self.form_class(request.GET)
             if form.is_valid():
                 categoryForm = form.cleaned_data["category"]
+                languageForm = form.cleaned_data["language"]
             else:
-                form = self.form_class(self.initial)
+                form = self.form_class(self.initial, )
                 categoryForm = form.data["category"]
+                languageForm = form.data["language"]
+
             request.session['category']=categoryForm
+            request.session['language']=languageForm
             self.object_list = self.get_queryset()
             self.queryset = self.get_queryset()
             queryset = self.queryset.filter(category = categoryForm )
@@ -46,6 +51,7 @@ class FilterView(ListView):
             context["card_list"]  = queryset
             context["form"] = form
             context["category"] = categoryForm
+            context["language"] = languageForm
             return render(request, self.template, context)
 
 class CardListView(ListView):
@@ -57,14 +63,20 @@ class CardListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["category"]=self.request.session["category"]
+        context["language"]=self.request.session["language"]
         return context
 
 class CardCreateView(CreateView):
     model = Card
-    fields = ["question", "answer", "box", "category"]
+    fields = ["question_de", "question_en", "answer", "box", "category"]
     success_url = reverse_lazy("card-create")
 
 class CardUpdateView(CardCreateView, UpdateView):
+    success_url = reverse_lazy("card-list")
+
+class CardDeleteView(DeleteView):
+    model = Card
+    template = "cards/card_confirm_delete.html"
     success_url = reverse_lazy("card-list")
 
 class BoxView(CardListView):
@@ -77,6 +89,7 @@ class BoxView(CardListView):
         context["box_number"] = self.kwargs["box_num"]
         context["object_list"] = self.get_queryset()
         context["category"] = self.request.session["category"]
+        context["language"]=self.request.session["language"]
         return context
 
 class CardRepeatView(CardListView):
@@ -92,6 +105,7 @@ class CardRepeatView(CardListView):
         context["object_list"] = self.get_queryset()
         context["card_count"] = len(self.get_queryset())
         context["category"] = self.request.session["category"]
+        context["language"]=self.request.session["language"]
 
         self.queryset = self.object_list
         if context["card_count"] >0:
