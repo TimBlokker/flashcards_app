@@ -3,6 +3,14 @@ import numpy as np
 import datetime
 from cards.models import Card
 tree = pd.read_xml('lexique-1.1.xml', parser = "etree")
+tree2 = pd.read_xml('lexique-2.0.xml', parser = "etree")
+tree = tree.iloc[:,0:9]
+tree.columns == tree2.columns
+tree=tree.reset_index(drop=True)
+tree2=tree2.reset_index(drop=True)
+merged_tree = tree.merge(tree2, "outer")
+merged_tree.duplicated()
+tree = tree2
 tree["date_moved"] = datetime.datetime.now(datetime.timezone.utc)
 tree["date_created"] = datetime.datetime.now(datetime.timezone.utc)
 tree["category"] = "F5"
