@@ -6,3 +6,5 @@ imports/lexique-1.1_F6.xml
 .gitignore
 imports/lexique-2.0_F6.xml
 flashcards_app_TODO
+imports/lexique*
+imports/Vocab*
