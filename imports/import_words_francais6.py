@@ -4,7 +4,7 @@ import datetime
 from cards.models import Card
 #import odf 
 
-cards = pd.read_csv("/home/tim/flashcards_app/imports/Vocab_12_09_22.ods")
+cards = pd.read_csv("/home/tim/flashcards_app/imports/12_Sep_22_vocabulary.csv")
 cards["answer"] = cards["FR"]
 cards["de"] =  cards["DE"]
 cards["en"] =  cards["EN"]
