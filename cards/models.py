@@ -25,7 +25,7 @@ LANG_CHOICES = [
 ]
 
 class Card(models.Model):
-    answer =  models.CharField(max_length = 100)
+    answer =  models.CharField(max_length = 300)
     question_en = models.CharField(max_length = 100)
     question_es = models.CharField(max_length = 100)
     question_de = models.CharField(max_length = 100)
