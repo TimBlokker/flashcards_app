@@ -12,7 +12,7 @@ import numpy as np
 import datetime
 from cards.models import Card
 
-cards = read_ods("/home/timblokker/Documents/flashcards_app/imports/verlan.ods")
+cards = pd.read_csv("/home/timblokker/Documents/flashcards_app/imports/verlan.csv")
 
 
 cards["answer"] = cards["french"]
