@@ -10,6 +10,7 @@ BOXES = range(1, NUM_BOXES + 1)
 CAT_CHOICES = [
     ('Test_Card','test cards'),
     ('livres', 'Livres/Journaux'),
+    ('VHS_B1/B2', 'VHS_B1/B2'),
     ('F5','Francais 5'),
     ('F6','Francais 6'),
     ('F7','Francais 7'),
