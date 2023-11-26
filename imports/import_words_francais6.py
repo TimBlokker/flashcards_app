@@ -1,10 +1,15 @@
+import django
+import os
+os.environ['DJANGO_SETTINGS_MODULE'] = 'flashcards.settings'
+django.setup()
+
 import pandas as pd
 import numpy as np
 import datetime
 from cards.models import Card
 #import odf 
 
-cards = pd.read_csv("/home/tim/flashcards_app/imports/12_Sep_22_vocabulary.csv")
+cards = pd.read_csv("/home/timblokker/Documents/flashcards_app/imports/12_Sep_22_vocabulary.csv")
 cards["answer"] = cards["FR"]
 cards["de"] =  cards["DE"]
 cards["en"] =  cards["EN"]
@@ -13,6 +18,7 @@ cards["date_moved"] = datetime.datetime.now(datetime.timezone.utc)
 cards["date_created"] = datetime.datetime.now(datetime.timezone.utc)
 cards["category"] = "F6"
 cards["box"] = 1
+
 
 
 #cards.to_csv("/home/tim/flashcards_app/imports/12_Sep_22_vocabulary.csv")
