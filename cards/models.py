@@ -55,7 +55,7 @@ class Card(models.Model):
             self.save()
         return self
 
-    @property    
+    @property
     def to_repeat(self):
         now = datetime.datetime.now(datetime.timezone.utc)
         min_age = {
@@ -66,13 +66,13 @@ class Card(models.Model):
         5:14,
         6:30
         }
-        to_repeat = (now - self.date_moved- datetime.timedelta(days=min_age[self.box])).total_seconds() > 0 
+        to_repeat = (now - self.date_moved- datetime.timedelta(days=min_age[self.box])).total_seconds() > 0
         return to_repeat
 
     class Meta:
-        unique_together = ('answer', 'question_de',) # should it be unique across categories?  
-        unique_together = ('answer', 'question_en',)        
-        unique_together = ('answer', 'question_pl',)        
-        unique_together = ('answer', 'question_it',)        
-        unique_together = ('answer', 'question_pt',)        
+        unique_together = ('answer', 'question_de',) # should it be unique across categories?
+        unique_together = ('answer', 'question_en',)
+        unique_together = ('answer', 'question_pl',)
+        unique_together = ('answer', 'question_it',)
+        unique_together = ('answer', 'question_pt',)
         unique_together = ('answer', 'question_es',)
