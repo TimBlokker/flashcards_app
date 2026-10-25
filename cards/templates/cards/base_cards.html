@@ -13,7 +13,7 @@
     {% if not learning_mode %}
         <header class="site-header">
             <div class="header-inner">
-                <a class="brand" href="{% if user.is_authenticated %}{% url 'card-list' %}{% else %}{% url 'login' %}{% endif %}">
+                <a class="brand" href="{% if user.is_authenticated %}{% url 'home' %}{% else %}{% url 'login' %}{% endif %}">
                     <span class="brand-mark" aria-hidden="true">f</span>
                     <span>flashcards<span class="brand-period">.</span></span>
                 </a>

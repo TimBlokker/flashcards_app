@@ -44,7 +44,7 @@ def csrf_failure(request, reason=""):
         return default_csrf_failure(request, reason=reason)
 
     if request.user.is_authenticated:
-        return redirect("card-list")
+        return redirect("home")
 
     messages.error(
         request,
@@ -103,7 +103,7 @@ def dictionary_suggestions(request):
 class SignUpView(FormView):
     template_name = "registration/signup.html"
     form_class = UserCreationForm
-    success_url = reverse_lazy("card-list")
+    success_url = reverse_lazy("home")
 
     def form_valid(self, form):
         with transaction.atomic():
@@ -151,6 +151,22 @@ class CardListView(LoginRequiredMixin, ListView):
             Card.objects.filter(
                 user=self.request.user,
             ).order_by("box", "-date_created")
+        )
+
+
+class HomeView(LoginRequiredMixin, View):
+    template_name = "cards/home.html"
+
+    def get(self, request, *args, **kwargs):
+        summary = progress_summary(request.user)
+        request._cards_progress_summary = summary
+        return render(
+            request,
+            self.template_name,
+            {
+                **summary,
+                "due_count": due_card_count(request.user),
+            },
         )
 
 

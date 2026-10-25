@@ -24,7 +24,7 @@ urlpatterns = [
         "accounts/login/",
         auth_views.LoginView.as_view(
             template_name="registration/login.html",
-            next_page=reverse_lazy("card-list"),
+            next_page=reverse_lazy("home"),
         ),
         name="login",
     ),

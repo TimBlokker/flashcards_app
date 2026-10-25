@@ -1,0 +1,67 @@
+{% extends "cards/base_cards.html" %}
+{% block title %}Your Arabic journey{% endblock %}
+{% block content %}
+    <section class="page-heading">
+        <div class="page-heading-actions">
+            <p class="eyebrow">YOUR ARABIC JOURNEY</p>
+            <h1>Welcome back, {{ user.username }}</h1>
+            <p class="page-intro">There {% if due_count == 1 %}is{% else %}are{% endif %} {{ due_count }} card{{ due_count|pluralize }} for you to review.</p>
+        </div>
+        <div class="page-heading-actions">
+            <a class="button button-primary" href="{% url 'todo-list' %}">Study now</a>
+        </div>
+    </section>
+
+    <section class="progress-hero" aria-labelledby="level-title">
+        <div class="progress-level">
+            <p class="progress-kicker">Level {{ level.number }} of 10</p>
+            <h2 id="level-title">{{ level.title }}</h2>
+            <p class="progress-level-ar" lang="ar" dir="rtl">{{ level.arabic_title }}</p>
+            <p class="progress-tagline">{{ level.tagline }}</p>
+        </div>
+        <div class="progress-meter-wrap">
+            <div
+                class="progress-meter"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="{{ level_percent }}"
+                aria-label="Progress to level {{ next_level.number|default:10 }}"
+            >
+                <span class="progress-meter-fill" style="width: {{ level_percent }}%"></span>
+            </div>
+            <p class="progress-meter-label">
+                {% if next_level %}
+                    <strong>{{ points }}</strong> points ·
+                    {{ points_to_next }} to {{ next_level.title }}
+                    ({{ next_level.arabic_title }})
+                {% else %}
+                    Top level reached · <strong>{{ points }}</strong> points
+                {% endif %}
+            </p>
+        </div>
+    </section>
+
+    <section class="stat-grid" aria-label="Your study numbers">
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">🔥</span>
+            <strong>{{ streak }}</strong>
+            <p>day{{ streak|pluralize }} streak</p>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">★</span>
+            <strong>{{ longest_streak }}</strong>
+            <p>longest streak</p>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">✦</span>
+            <strong>{{ points }}</strong>
+            <p>points</p>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">◷</span>
+            <strong>{{ cards_today }}/{{ goal }}</strong>
+            <p>cards today</p>
+        </div>
+    </section>
+{% endblock content %}

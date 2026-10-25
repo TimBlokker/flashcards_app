@@ -149,8 +149,8 @@ class DictionarySuggestionTests(TestCase):
 class AccountDeckTests(TestCase):
 	def create_card(self, **kwargs):
 		return Card.objects.create(
-			answer="legacy-secret-answer",
-			question="question",
+			answer=kwargs.pop("answer", "legacy-secret-answer"),
+			question=kwargs.pop("question", "question"),
 			**kwargs,
 		)
 
@@ -161,8 +161,12 @@ class AccountDeckTests(TestCase):
 			response,
 			f"{reverse('login')}?next={reverse('card-list')}",
 		)
+		self.assertRedirects(
+			self.client.get(reverse("home")),
+			f"{reverse('login')}?next={reverse('home')}",
+		)
 
-	def test_login_redirects_to_card_list(self):
+	def test_login_redirects_to_home(self):
 		user = get_user_model().objects.create_user(
 			"login-redirect-user",
 			password="Correct-Horse-92!",
@@ -173,7 +177,7 @@ class AccountDeckTests(TestCase):
 			{"username": user.username, "password": "Correct-Horse-92!"},
 		)
 
-		self.assertRedirects(response, reverse("card-list"))
+		self.assertRedirects(response, reverse("home"))
 
 	def test_login_accepts_current_csrf_cookie_token(self):
 		client = self.client_class(enforce_csrf_checks=True)
@@ -194,7 +198,7 @@ class AccountDeckTests(TestCase):
 			},
 		)
 
-		self.assertRedirects(response, reverse("card-list"))
+		self.assertRedirects(response, reverse("home"))
 
 	def test_invalid_csrf_on_login_refreshes_form_for_logged_out_user(self):
 		client = self.client_class(enforce_csrf_checks=True)
@@ -219,7 +223,7 @@ class AccountDeckTests(TestCase):
 
 		response = client.post(reverse("login"))
 
-		self.assertRedirects(response, reverse("card-list"))
+		self.assertRedirects(response, reverse("home"))
 		self.assertTrue(response.wsgi_request.user.is_authenticated)
 
 	def test_new_account_creates_language_neutral_cards_without_category(self):
@@ -383,7 +387,7 @@ class AccountDeckTests(TestCase):
 			},
 		)
 
-		self.assertRedirects(response, reverse("card-list"))
+		self.assertRedirects(response, reverse("home"))
 		user = get_user_model().objects.get(username="legacyUser")
 		self.assertTrue(user.check_password("Correct-Horse-92!"))
 		legacy_card.refresh_from_db()
@@ -797,12 +801,12 @@ class AccountDeckTests(TestCase):
 		)
 		self.assertIn("        min-height: 4.25rem;", stylesheet)
 
-	def test_home_page_shows_all_user_cards_without_filter_view(self):
+	def test_card_list_shows_all_user_cards_without_filter_view(self):
 		user = get_user_model().objects.create_user("home-page-owner")
 		self.create_card(user=user)
 		self.client.force_login(user)
 
-		response = self.client.get("/")
+		response = self.client.get(reverse("card-list"))
 
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "legacy-secret-answer")
@@ -814,6 +818,44 @@ class AccountDeckTests(TestCase):
 		self.assertNotContains(response, 'name="category"')
 		with self.assertRaises(NoReverseMatch):
 			reverse("fiter-categories")
+
+	def test_home_page_shows_progress_dashboard_and_due_card_count(self):
+		user = get_user_model().objects.create_user("dashboard-owner")
+		other_user = get_user_model().objects.create_user("other-dashboard-owner")
+		due_card = self.create_card(user=user, question="due question")
+		Card.objects.filter(pk=due_card.pk).update(
+			date_moved=timezone.now() - timedelta(days=2),
+		)
+		self.create_card(user=user, question="new question")
+		other_due_card = self.create_card(
+			user=other_user,
+			question="other user's due question",
+		)
+		Card.objects.filter(pk=other_due_card.pk).update(
+			date_moved=timezone.now() - timedelta(days=2),
+		)
+		StudyProgress.objects.create(
+			user=user,
+			points=46,
+			cards_today=10,
+			cards_today_date=timezone.localdate(),
+			current_streak=1,
+			longest_streak=1,
+			last_streak_date=timezone.localdate(),
+		)
+		self.client.force_login(user)
+
+		response = self.client.get(reverse("home"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Welcome back, dashboard-owner")
+		self.assertContains(response, "There is 1 card for you to review.")
+		self.assertContains(response, "Little Student")
+		self.assertContains(response, "46</strong> points")
+		self.assertContains(response, "10/10")
+		self.assertContains(response, f'class="brand" href="{reverse("home")}"')
+		self.assertContains(response, reverse("todo-list"))
+		self.assertNotContains(response, "legacy-secret-answer")
 
 
 class CardAudioTests(TestCase):

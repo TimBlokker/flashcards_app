@@ -109,57 +109,5 @@
         </ol>
     </section>
 
-    <section class="reminder-panel" aria-labelledby="reminder-title">
-        <div class="reminder-copy">
-            <p class="eyebrow">STUDY NUDGE</p>
-            <h2 id="reminder-title">WhatsApp reminder</h2>
-            <p>
-                Get a friendly nudge with your streak, points and cards due.
-                Save your number and open WhatsApp for a reminder you can send
-                to yourself in one tap.
-            </p>
-            {% if whatsapp_link %}
-                <a class="button button-secondary" href="{{ whatsapp_link }}" target="_blank" rel="noopener">
-                    Open WhatsApp reminder
-                </a>
-                <details class="reminder-preview">
-                    <summary>Preview the message</summary>
-                    <pre>{{ reminder_preview }}</pre>
-                </details>
-            {% else %}
-                <p class="reminder-hint">Save a number to unlock the one-tap WhatsApp reminder.</p>
-            {% endif %}
-            {% if due_count %}
-                <p class="reminder-note">{{ due_count }} card{{ due_count|pluralize }} ready for review right now.</p>
-            {% endif %}
-        </div>
 
-        <form method="post" class="reminder-form">
-            {% csrf_token %}
-            <p>
-                <label for="{{ reminder_form.phone_number.id_for_label }}">{{ reminder_form.phone_number.label }}</label>
-                {{ reminder_form.phone_number }}
-                {% for error in reminder_form.phone_number.errors %}
-                    <span class="field-error" role="alert">{{ error }}</span>
-                {% endfor %}
-                <small>{{ reminder_form.phone_number.help_text }}</small>
-            </p>
-            <p>
-                <label for="{{ reminder_form.reminder_time.id_for_label }}">{{ reminder_form.reminder_time.label }}</label>
-                {{ reminder_form.reminder_time }}
-                {% for error in reminder_form.reminder_time.errors %}
-                    <span class="field-error" role="alert">{{ error }}</span>
-                {% endfor %}
-                <small>{{ reminder_form.reminder_time.help_text }}</small>
-            </p>
-            <p class="reminder-checkbox">
-                {{ reminder_form.enabled }}
-                <label for="{{ reminder_form.enabled.id_for_label }}">{{ reminder_form.enabled.label }}</label>
-            </p>
-            {% for error in reminder_form.enabled.errors %}
-                <span class="field-error" role="alert">{{ error }}</span>
-            {% endfor %}
-            <button class="button button-primary" type="submit">Save reminder</button>
-        </form>
-    </section>
 {% endblock content %}
