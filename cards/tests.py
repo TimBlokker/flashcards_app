@@ -1434,3 +1434,88 @@ class ConsolidateQuestionMigrationTests(TransactionTestCase):
 			self.assertEqual(CurrentCard._meta.pk.get_internal_type(), "BigAutoField")
 		finally:
 			MigrationExecutor(connection).migrate(self.latest_migration)
+
+	def test_arabic_question_migration_reports_conflicts_before_changing_data(self):
+		before_migration = [(
+			"cards",
+			"0014_remove_card_category_and_account_category_settings",
+		)]
+		after_migration = [(
+			"cards",
+			"0015_reorient_arabic_cards_and_expand_questions",
+		)]
+
+		try:
+			MigrationExecutor(connection).migrate(before_migration)
+			old_apps = MigrationExecutor(connection).loader.project_state(
+				before_migration
+			).apps
+			User = old_apps.get_model("auth", "User")
+			LegacyCard = old_apps.get_model("cards", "Card")
+			user = User.objects.create(username="arabic-reorientation-conflict")
+			reversed_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="مَرْحَبًا",
+				answer="Hello",
+				answer_vocalized="stale vocalization",
+			)
+			existing_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="Hello",
+				answer="مرحبا",
+				answer_vocalized="مَرْحَبًا",
+			)
+
+			with self.assertRaisesRegex(
+				RuntimeError,
+				"question collision",
+			) as error:
+				MigrationExecutor(connection).migrate(after_migration)
+
+			self.assertIn(str(reversed_card.pk), str(error.exception))
+			self.assertIn(str(existing_card.pk), str(error.exception))
+			self.assertEqual(
+				list(
+					LegacyCard.objects.filter(user_id=user.pk)
+					.order_by("pk")
+					.values_list("pk", "question", "answer", "answer_vocalized")
+				),
+				[
+					(
+						reversed_card.pk,
+						"مَرْحَبًا",
+						"Hello",
+						"stale vocalization",
+					),
+					(
+						existing_card.pk,
+						"Hello",
+						"مرحبا",
+						"مَرْحَبًا",
+					),
+				],
+			)
+			self.assertNotIn(
+				("cards", "0015_reorient_arabic_cards_and_expand_questions"),
+				MigrationExecutor(connection).loader.applied_migrations,
+			)
+			with connection.cursor() as cursor:
+				column_names = {
+					column.name
+					for column in connection.introspection.get_table_description(
+						cursor,
+						LegacyCard._meta.db_table,
+					)
+				}
+			self.assertEqual(
+				LegacyCard._meta.get_field("question").max_length,
+				100,
+			)
+			self.assertTrue(
+				{"question", "answer", "answer_vocalized"}.issubset(column_names)
+			)
+		finally:
+			if "user" in locals():
+				LegacyCard.objects.filter(user_id=user.pk).delete()
+				User.objects.filter(pk=user.pk).delete()
+			MigrationExecutor(connection).migrate(self.latest_migration)
