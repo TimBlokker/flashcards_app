@@ -3,7 +3,7 @@
     <section class="form-panel">
         <p class="eyebrow">GROW YOUR DECK</p>
         <h1>Import cards</h1>
-        <p class="form-intro">Upload a CSV or Excel (.xlsx) file with columns named <code>question</code> and <code>answer</code>. Excel files use the first worksheet. Imported cards start in box 1.</p>
+        <p class="form-intro">Upload a CSV or Excel (.xlsx) file with columns named <code>question</code> and <code>answer</code>. The question must contain English text and the answer Arabic text. Excel files use the first worksheet. Imported cards start in box 1.</p>
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
             {% if form.non_field_errors %}

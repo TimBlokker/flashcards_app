@@ -46,6 +46,23 @@ def with_card_vocalizations(cards):
     return cards_with_dictionary_vocalizations
 
 
+def exported_card_columns(card):
+    """Return the card as (question, answer) with English before Arabic.
+
+    Card 0015 already reorients stored rows where the question is Arabic and
+    the answer is not. Export applies the same rule so old, unreoriented rows
+    still come out with an English question and an Arabic answer.
+    """
+    if (
+        card.question
+        and card.answer
+        and contains_arabic(card.question)
+        and not contains_arabic(card.answer)
+    ):
+        return card.answer, card.question
+    return card.question, card.answer
+
+
 def dictionary_suggestions(request):
     query = request.GET.get("q", "").strip()
     if len(query) < 2:
@@ -233,8 +250,9 @@ class CardExportView(LoginRequiredMixin, View):
 
         cards = Card.objects.filter(user=request.user).order_by("pk").iterator()
         for card in cards:
-            if card.question:
-                worksheet.append([card.question, card.answer])
+            question, answer = exported_card_columns(card)
+            if question:
+                worksheet.append([question, answer])
 
         output = BytesIO()
         workbook.save(output)

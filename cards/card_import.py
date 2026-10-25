@@ -4,6 +4,8 @@ from zipfile import BadZipFile
 
 from django.core.exceptions import ValidationError
 
+from .arabic import contains_arabic, contains_latin
+
 
 MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024
 MAX_IMPORT_ROWS = 5000
@@ -48,6 +50,14 @@ def _validated_rows(rows):
         if not question or not answer:
             raise ValidationError(
                 f"Row {row_number}: question and answer must both be non-empty."
+            )
+        if not contains_latin(question):
+            raise ValidationError(
+                f"Row {row_number}: question must contain English text."
+            )
+        if not contains_arabic(answer):
+            raise ValidationError(
+                f"Row {row_number}: answer must contain Arabic text."
             )
         parsed_rows.append((row_number, question, answer))
         if len(parsed_rows) > MAX_IMPORT_ROWS:

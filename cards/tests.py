@@ -748,7 +748,7 @@ class CardImportTests(TestCase):
 			},
 		)
 
-	def test_csv_upload_creates_owned_cards_with_any_language_question(self):
+	def test_csv_upload_creates_owned_cards_with_english_question_and_arabic_answer(self):
 		DictionaryEntry.objects.create(
 			language_pair="en-ar",
 			headword="hello",
@@ -757,7 +757,11 @@ class CardImportTests(TestCase):
 		)
 		response = self.upload(
 			"cards.csv",
-			b"question,answer\nhello,\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7\nbye,goodbye\n",
+			(
+				"question,answer\n"
+				"hello,مرحبا\n"
+				"bye,وداعا\n"
+			).encode("utf-8"),
 		)
 
 		self.assertRedirects(response, reverse("card-list"))
@@ -783,13 +787,13 @@ class CardImportTests(TestCase):
 		card = Card.objects.get(user=self.user, question="phrase")
 		self.assertEqual(card.answer_vocalized, "")
 
-	def test_xlsx_upload_creates_cards_with_unrestricted_question_text(self):
+	def test_xlsx_upload_creates_cards_with_english_question_and_arabic_answer(self):
 		from openpyxl import Workbook
 
 		workbook = Workbook()
 		worksheet = workbook.active
 		worksheet.append(["question", "answer"])
-		worksheet.append(["maison", "house"])
+		worksheet.append(["maison", "منزل"])
 		content = BytesIO()
 		workbook.save(content)
 
@@ -798,7 +802,7 @@ class CardImportTests(TestCase):
 		self.assertRedirects(response, reverse("card-list"))
 		card = Card.objects.get(user=self.user)
 		self.assertEqual(card.question, "maison")
-		self.assertEqual(card.answer, "house")
+		self.assertEqual(card.answer, "منزل")
 
 	def test_exported_xlsx_round_trips_question_and_answer(self):
 		Card.objects.create(
@@ -808,7 +812,7 @@ class CardImportTests(TestCase):
 		)
 		Card.objects.create(
 			user=self.user,
-			answer="Haus",
+			answer="منزل",
 			question="maison",
 		)
 		other_user = get_user_model().objects.create_user("export-recipient")
@@ -844,7 +848,7 @@ class CardImportTests(TestCase):
 			[
 				("question", "answer"),
 				("hello", "مرحبا"),
-				("maison", "Haus"),
+				("maison", "منزل"),
 			],
 		)
 		self.assertNotIn(
@@ -876,7 +880,7 @@ class CardImportTests(TestCase):
 			[
 				("private question", "private"),
 				("hello", "مرحبا"),
-				("maison", "Haus"),
+				("maison", "منزل"),
 			],
 		)
 
@@ -898,7 +902,12 @@ class CardImportTests(TestCase):
 	def test_duplicate_rows_are_skipped_and_reported_after_import(self):
 		response = self.upload(
 			"cards.csv",
-			b"question,answer\nhello,world\nhello,another answer\nbye,goodbye\n",
+			(
+				"question,answer\n"
+				"hello,مرحبا\n"
+				"hello,مرحبا ثانية\n"
+				"bye,وداعا\n"
+			).encode("utf-8"),
 		)
 
 		self.assertRedirects(response, reverse("card-list"))
@@ -929,7 +938,11 @@ class CardImportTests(TestCase):
 
 		response = self.upload(
 			"invalid-row.csv",
-			b"question,answer\nvalid question,valid answer\n,missing question\n",
+			(
+				"question,answer\n"
+				"valid question,جواب صحيح\n"
+				",missing question\n"
+			).encode("utf-8"),
 		)
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "Row 3")
@@ -938,19 +951,23 @@ class CardImportTests(TestCase):
 	def test_upload_skips_existing_duplicate_but_imports_other_rows(self):
 		Card.objects.create(
 			user=self.user,
-			answer="world",
+			answer="مرحبا",
 			question="hello",
 		)
 		other_user = get_user_model().objects.create_user("other-importer")
 		Card.objects.create(
 			user=other_user,
-			answer="world",
+			answer="جواب آخر",
 			question="other question",
 		)
 
 		response = self.upload(
 			"cards.csv",
-			b"question,answer\nhello,different translation\nnew question,new answer\n",
+			(
+				"question,answer\n"
+				"hello,ترجمة مختلفة\n"
+				"new question,جواب جديد\n"
+			).encode("utf-8"),
 		)
 
 		self.assertRedirects(response, reverse("card-list"))
@@ -968,6 +985,138 @@ class CardImportTests(TestCase):
 
 		self.assertEqual(response.status_code, 302)
 		self.assertIn(reverse("login"), response.url)
+
+	def test_import_rejects_question_without_english_text(self):
+		response = self.upload(
+			"cards.csv",
+			"question,answer\nمرحبا,مرحبا\n".encode("utf-8"),
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(
+			response,
+			"Row 2: question must contain English text.",
+		)
+		self.assertEqual(Card.objects.filter(user=self.user).count(), 0)
+
+	def test_import_rejects_answer_without_arabic_text(self):
+		response = self.upload(
+			"cards.csv",
+			b"question,answer\nhello,goodbye\n",
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(
+			response,
+			"Row 2: answer must contain Arabic text.",
+		)
+		self.assertEqual(Card.objects.filter(user=self.user).count(), 0)
+
+	def test_import_reports_the_first_invalid_row(self):
+		response = self.upload(
+			"cards.csv",
+			(
+				"question,answer\n"
+				"valid,جواب\n"
+				"hello,goodbye\n"
+				"مرحبا,مرحبا\n"
+			).encode("utf-8"),
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(
+			response,
+			"Row 3: answer must contain Arabic text.",
+		)
+		self.assertNotContains(
+			response,
+			"Row 4: question must contain English text.",
+		)
+		self.assertEqual(Card.objects.filter(user=self.user).count(), 0)
+
+	def test_import_accepts_mixed_script_question_with_english_letters(self):
+		question = "What is مرحبا in English?"
+		response = self.upload(
+			"cards.csv",
+			f"question,answer\n{question},مرحبا\n".encode("utf-8"),
+		)
+
+		self.assertRedirects(response, reverse("card-list"))
+		self.assertTrue(
+			Card.objects.filter(
+				user=self.user,
+				question=question,
+			).exists()
+		)
+
+	def test_export_writes_english_question_and_arabic_answer(self):
+		Card.objects.create(
+			user=self.user,
+			answer="hello",
+			question="مرحبا",
+		)
+		Card.objects.create(
+			user=self.user,
+			answer="وداعا",
+			question="bye",
+		)
+
+		export_response = self.client.get(reverse("card-export"))
+
+		from openpyxl import load_workbook
+		exported_workbook = load_workbook(
+			BytesIO(export_response.content),
+			read_only=True,
+			data_only=True,
+		)
+		exported_rows = list(
+			exported_workbook.active.iter_rows(values_only=True)
+		)
+		exported_workbook.close()
+		self.assertEqual(
+			exported_rows,
+			[
+				("question", "answer"),
+				("hello", "مرحبا"),
+				("bye", "وداعا"),
+			],
+		)
+
+	def test_exported_file_can_be_imported_again(self):
+		Card.objects.create(
+			user=self.user,
+			answer="hello",
+			question="مرحبا",
+		)
+		export_response = self.client.get(reverse("card-export"))
+
+		recipient = get_user_model().objects.create_user("export-round-trip")
+		recipient_client = self.client_class()
+		recipient_client.force_login(recipient)
+		import_response = recipient_client.post(
+			reverse("card-import"),
+			{
+				"file": SimpleUploadedFile(
+					"flashcards.xlsx",
+					export_response.content,
+					content_type=(
+						"application/vnd.openxmlformats-officedocument."
+						"spreadsheetml.sheet"
+					),
+				),
+			},
+		)
+
+		self.assertRedirects(import_response, reverse("card-list"))
+		self.assertEqual(
+			list(
+				Card.objects.filter(user=recipient).values_list(
+					"question",
+					"answer",
+				)
+			),
+			[("hello", "مرحبا")],
+		)
 
 
 class ArabicVocalizationTests(TestCase):
