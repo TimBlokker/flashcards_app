@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from .models import BOXES, Card, DictionaryEntry
 from .card_import import parse_card_import
+from .arabic import contains_arabic, contains_latin
 
 
 class CardForm(forms.ModelForm):
@@ -21,6 +22,10 @@ class CardForm(forms.ModelForm):
         labels = {
             "question": "Question",
             "answer": "Answer / translation",
+        }
+        help_texts = {
+            "question": "Write the question in English.",
+            "answer": "Write the answer in Arabic.",
         }
 
     def __init__(self, *args, user=None, **kwargs):
@@ -47,6 +52,10 @@ class CardForm(forms.ModelForm):
                     )
         question = cleaned_data.get("question")
         answer = cleaned_data.get("answer")
+        if question and not contains_latin(question):
+            self.add_error("question", "Question must contain English text.")
+        if answer and not contains_arabic(answer):
+            self.add_error("answer", "Answer must contain Arabic text.")
         if question and self.user is not None:
             duplicates = Card.objects.filter(
                 user=self.user,

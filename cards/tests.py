@@ -276,11 +276,11 @@ class AccountDeckTests(TestCase):
 	def test_card_form_prevents_duplicate_question_per_user(self):
 		user = get_user_model().objects.create_user("owner")
 		other_user = get_user_model().objects.create_user("other")
-		Card.objects.create(user=user, question="question", answer="translation")
+		Card.objects.create(user=user, question="question", answer="ترجمة")
 		duplicate_form = CardForm(
 			data={
 				"question": "question",
-				"answer": "different translation",
+				"answer": "ترجمة مختلفة",
 				"box": 1,
 			},
 			user=user,
@@ -291,7 +291,7 @@ class AccountDeckTests(TestCase):
 		other_user_form = CardForm(
 			data={
 				"question": "question",
-				"answer": "translation",
+				"answer": "ترجمة",
 				"box": 1,
 			},
 			user=other_user,
@@ -301,17 +301,61 @@ class AccountDeckTests(TestCase):
 	def test_card_question_form_accepts_up_to_500_characters(self):
 		valid_form = CardForm(data={
 			"question": "q" * 500,
-			"answer": "translation",
+			"answer": "ترجمة",
 			"box": 1,
 		})
 		invalid_form = CardForm(data={
 			"question": "q" * 501,
-			"answer": "translation",
+			"answer": "ترجمة",
 			"box": 1,
 		})
 
 		self.assertTrue(valid_form.is_valid(), valid_form.errors)
 		self.assertFalse(invalid_form.is_valid())
+
+	def test_card_form_rejects_question_without_english_text(self):
+		form = CardForm(data={
+			"question": "مرحبا",
+			"answer": "مرحبا",
+			"box": 1,
+		})
+
+		self.assertFalse(form.is_valid())
+		self.assertIn("Question must contain English text.", str(form.errors))
+
+	def test_card_form_rejects_answer_without_arabic_text(self):
+		form = CardForm(data={
+			"question": "Haus",
+			"answer": "maison",
+			"box": 1,
+		})
+
+		self.assertFalse(form.is_valid())
+		self.assertIn("Answer must contain Arabic text.", str(form.errors))
+
+	def test_card_update_rejects_an_answer_without_arabic_text(self):
+		user = get_user_model().objects.create_user("update-language-owner")
+		card = Card.objects.create(
+			user=user,
+			question="Good morning",
+			answer="صباح الخير",
+		)
+		self.client.force_login(user)
+
+		response = self.client.post(
+			reverse("card-update", args=[card.pk]),
+			{
+				"question": card.question,
+				"answer": "good morning",
+				"answer_vocalized": "",
+				"box": card.box,
+			},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Answer must contain Arabic text.")
+		card.refresh_from_db()
+		self.assertEqual(card.answer, "صباح الخير")
 
 	def test_database_prevents_duplicate_question_per_user(self):
 		user = get_user_model().objects.create_user("unique-question-owner")
@@ -1446,18 +1490,6 @@ class ArabicVocalizationTests(TestCase):
 		self.assertIn('class="card-side-label">QUESTION', flipped_front)
 		self.assertIn("مريض", flipped_front)
 		self.assertNotIn("مَرِيضٌ", flipped_front)
-
-	def test_non_arabic_answers_are_not_vocalized(self):
-		form = CardForm(data={
-			"question": "Haus",
-			"answer": "maison",
-			"box": 1,
-		})
-
-		self.assertTrue(form.is_valid())
-		card = form.save()
-
-		self.assertEqual(card.answer_vocalized, "")
 
 	def test_card_result_displays_vocalized_answer_right_to_left(self):
 		entry = DictionaryEntry.objects.create(
