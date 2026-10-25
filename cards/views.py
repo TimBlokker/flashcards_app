@@ -6,8 +6,9 @@ from django.contrib import messages
 from django.db import IntegrityError, transaction
 from django.db.models import OuterRef, Subquery
 from django.http import JsonResponse
-from django.urls import reverse_lazy
-from django.views.csrf import csrf_failure as django_csrf_failure
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse, reverse_lazy
+from django.views.csrf import csrf_failure as default_csrf_failure
 from django.views.generic import (
     ListView,
     CreateView,
@@ -16,21 +17,40 @@ from django.views.generic import (
     View,
 )
 from django.views.generic.edit import FormView
-from .models import BOXES, Card, DictionaryEntry
+from .models import BOXES, Card, DictionaryEntry, StudyReminder
+from .levels import level_ladder
+from .progress import (
+    due_card_count,
+    progress_summary,
+    record_card_review,
+    streak_message,
+)
+from .reminders import build_reminder_message
+from .whatsapp import whatsapp_deep_link
 import random
 from io import BytesIO
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, redirect
 from .forms import (
     CardForm,
     CardImportForm,
+    StudyReminderForm,
 )
 from .forms import CardCheckForm
 from .arabic import contains_arabic, vocalize_arabic
 
 
 def csrf_failure(request, reason=""):
-    return django_csrf_failure(request, reason)
+    if request.path_info != reverse("login"):
+        return default_csrf_failure(request, reason=reason)
+
+    if request.user.is_authenticated:
+        return redirect("card-list")
+
+    messages.error(
+        request,
+        "Your login form could not be verified. Please try again.",
+    )
+    return redirect("login")
 
 
 def with_card_vocalizations(cards):
@@ -345,8 +365,14 @@ class CardRepeatView(CardListView):
                 user=request.user,
             )
             card.move(form.cleaned_data["solved"])
+            progress, streak_awarded = record_card_review(
+                request.user,
+                form.cleaned_data["solved"],
+            )
+            if streak_awarded:
+                messages.success(request, streak_message(progress))
             card.to_repeat
-        return redirect(request.META.get("HTTP_REFERER"))
+        return redirect(request.META.get("HTTP_REFERER") or "todo-list")
 
 
 class CardPracticeView(LoginRequiredMixin, ListView):
@@ -437,4 +463,50 @@ class CardPracticeView(LoginRequiredMixin, ListView):
             if not form.cleaned_data["solved"]:
                 card_ids.append(card.pk)
             request.session[key] = card_ids
+            progress, streak_awarded = record_card_review(
+                request.user,
+                form.cleaned_data["solved"],
+            )
+            if streak_awarded:
+                messages.success(request, streak_message(progress))
         return redirect(request.path)
+
+
+class StudyProgressView(LoginRequiredMixin, View):
+    template_name = "cards/progress.html"
+
+    def _context(self, request, form=None):
+        summary = progress_summary(request.user)
+        request._cards_progress_summary = summary
+        reminder, _ = StudyReminder.objects.get_or_create(user=request.user)
+        due_count = due_card_count(request.user)
+        preview = build_reminder_message(
+            request.user,
+            summary=summary,
+            due_count=due_count,
+        )
+        return {
+            **summary,
+            "levels": level_ladder(summary["points"]),
+            "reminder": reminder,
+            "reminder_form": form or StudyReminderForm(instance=reminder),
+            "due_count": due_count,
+            "reminder_preview": preview,
+            "whatsapp_link": (
+                whatsapp_deep_link(reminder.phone_number, preview)
+                if reminder.phone_number
+                else ""
+            ),
+        }
+
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name, self._context(request))
+
+    def post(self, request, *args, **kwargs):
+        reminder, _ = StudyReminder.objects.get_or_create(user=request.user)
+        form = StudyReminderForm(request.POST, instance=reminder)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "WhatsApp reminder saved.")
+            return redirect("progress")
+        return render(request, self.template_name, self._context(request, form=form))

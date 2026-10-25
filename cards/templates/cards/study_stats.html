@@ -1,0 +1,46 @@
+{% if show %}
+{% if variant == "learning" %}
+<a class="learning-goal{% if streak_ready %} is-done{% endif %}" href="{% url 'progress' %}" title="Level {{ level.number }}: {{ level.title }} · {{ level.arabic_title }}">
+    <span aria-hidden="true">🔥</span>
+    <strong>{{ cards_today }}/{{ goal }}</strong>
+    <span>today</span>
+    <span class="learning-goal-points">{{ points }} pts</span>
+</a>
+{% elif variant == "mobile" %}
+<a class="study-stats study-stats--mobile" href="{% url 'progress' %}" aria-label="Level {{ level.number }}: {{ level.title }}, {{ level.arabic_title }}. {{ streak }} day streak, {{ points }} points, {{ cards_today }} of {{ goal }} cards today.">
+    <span class="study-stats-row">
+        <span class="study-stats-streak{% if streak >= 3 %} is-hot{% endif %}">
+            <span class="study-stats-flame" aria-hidden="true">🔥</span>
+            <strong>{{ streak }}</strong> day{{ streak|pluralize }}
+        </span>
+        <span class="study-stats-divider" aria-hidden="true">·</span>
+        <span class="study-stats-points"><strong>{{ points }}</strong> pts</span>
+        <span class="study-stats-divider" aria-hidden="true">·</span>
+        <span class="study-stats-goal{% if streak_ready %} is-done{% endif %}">
+            {% if streak_ready %}✓{% else %}{{ cards_today }}/{{ goal }}{% endif %}
+            today
+        </span>
+    </span>
+    <span class="study-stats-row study-stats-levelrow">
+        <span class="study-stats-level-ar" lang="ar" dir="rtl">{{ level.arabic_title }}</span>
+        <span class="study-stats-level-en">{{ level.title }}</span>
+        <span class="study-stats-chevron" aria-hidden="true">→</span>
+    </span>
+</a>
+{% else %}
+<a class="study-stats study-stats--desktop" href="{% url 'progress' %}" aria-label="Level {{ level.number }}: {{ level.title }}, {{ level.arabic_title }}. {{ streak }} day streak, {{ points }} points, {{ cards_today }} of {{ goal }} cards today. Open progress.">
+    <span class="study-stats-level">
+        <span class="study-stats-level-ar" lang="ar" dir="rtl">{{ level.arabic_title }}</span>
+        <span class="study-stats-level-en">{{ level.title }}</span>
+    </span>
+    <span class="study-stats-meta">
+        <span class="study-stats-streak{% if streak >= 3 %} is-hot{% endif %}">
+            <span class="study-stats-flame" aria-hidden="true">🔥</span>
+            <strong>{{ streak }}</strong>
+        </span>
+        <span class="study-stats-divider" aria-hidden="true">·</span>
+        <span class="study-stats-points"><strong>{{ points }}</strong> pts</span>
+    </span>
+</a>
+{% endif %}
+{% endif %}

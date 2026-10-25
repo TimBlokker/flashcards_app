@@ -4,13 +4,8 @@
         <a class="nav-link" href="{% url 'card-list' %}">My cards</a>
         {% repeat_box_as_link %}
         {% boxes_as_links %}
-        <a class="nav-link" href="{% url 'card-import' %}">Import</a>
-        <a class="nav-link" href="{% url 'card-export' %}">Export</a>
-        <span class="user-name">{{ user.username }}</span>
-        <form method="post" action="{% url 'logout' %}" class="logout-form">
-            {% csrf_token %}
-            <button type="submit" class="nav-link logout-button">Log out</button>
-        </form>
+        {% study_stats "desktop" %}
+        {% account_menu %}
     {% else %}
         <a class="nav-link" href="{% url 'login' %}">Log in</a>
         <a class="nav-link nav-link-primary" href="{% url 'signup' %}">Create account</a>

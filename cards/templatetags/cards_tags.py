@@ -1,5 +1,6 @@
 from django import template
 from cards.models import BOXES, Card
+from cards.progress import progress_summary
 
 register = template.Library()
 
@@ -37,4 +38,38 @@ def boxes_as_links(context):
 def repeat_box_as_link(context):
     return {
         "repeat_count": _get_navigation_data(context["request"])["repeat_count"]
+    }
+
+
+def _get_progress_summary(request):
+    summary = getattr(request, "_cards_progress_summary", None)
+    if summary is None:
+        summary = progress_summary(request.user)
+        request._cards_progress_summary = summary
+    return summary
+
+
+@register.inclusion_tag("cards/study_stats.html", takes_context=True)
+def study_stats(context, variant="desktop"):
+    request = context.get("request")
+    if request is None or not request.user.is_authenticated:
+        return {"show": False}
+
+    return {
+        **_get_progress_summary(request),
+        "show": True,
+        "variant": variant,
+    }
+
+
+@register.inclusion_tag("cards/account_menu.html", takes_context=True)
+def account_menu(context):
+    request = context.get("request")
+    if request is None or not request.user.is_authenticated:
+        return {"show": False}
+
+    return {
+        **_get_progress_summary(request),
+        "show": True,
+        "user": request.user,
     }

@@ -1,0 +1,25 @@
+{% if show %}
+<details class="desktop-account">
+    <summary class="desktop-account-trigger" aria-label="Account menu for {{ user.username }}">
+        <span class="desktop-account-initials" aria-hidden="true">{{ user.username|slice:":2"|upper }}</span>
+        <span class="desktop-account-caret" aria-hidden="true">▾</span>
+    </summary>
+    <div class="desktop-account-popover">
+        <p class="desktop-account-name">{{ user.username }}</p>
+        <a class="desktop-account-level" href="{% url 'progress' %}" aria-label="Level {{ level.number }}: {{ level.title }}. Open progress and reminders.">
+            <span class="desktop-account-level-kicker">Level {{ level.number }} · {{ points }} pts</span>
+            <span class="desktop-account-level-title">{{ level.title }}</span>
+            <span class="desktop-account-level-ar" lang="ar" dir="rtl">{{ level.arabic_title }}</span>
+            <span class="desktop-account-level-hint">Progress &amp; reminders →</span>
+        </a>
+        <div class="desktop-account-links">
+            <a class="desktop-account-link" href="{% url 'card-import' %}">Import cards</a>
+            <a class="desktop-account-link" href="{% url 'card-export' %}">Export cards</a>
+        </div>
+        <form method="post" action="{% url 'logout' %}" class="desktop-account-logout-form">
+            {% csrf_token %}
+            <button type="submit" class="desktop-account-link desktop-account-logout">Log out</button>
+        </form>
+    </div>
+</details>
+{% endif %}

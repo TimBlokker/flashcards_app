@@ -1,5 +1,5 @@
 {% extends "cards/base_cards.html" %}
-{% load humanize %}
+{% load humanize cards_tags %}
 {% block content %}
     <section class="learning-toolbar" aria-label="Learning controls">
         <div class="learning-title">
@@ -19,6 +19,7 @@
             </p>
         </div>
         <div class="learning-tools">
+            {% study_stats "learning" %}
             <form method="get" class="flip-control">
                 <label for="flip-flashcards">Flip cards</label>
                 <input type="hidden" name="flip" value="0">

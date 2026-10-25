@@ -1,0 +1,165 @@
+{% extends "cards/base_cards.html" %}
+{% block title %}Your progress{% endblock %}
+{% block content %}
+    <section class="page-heading">
+        <div class="page-heading-actions">
+            <p class="eyebrow">YOUR ARABIC JOURNEY</p>
+            <h1>Progress</h1>
+            <p class="page-intro">Ten cards a day keeps the flame alive.</p>
+        </div>
+        <div class="page-heading-actions">
+            <a class="button button-primary" href="{% url 'todo-list' %}">Study now</a>
+        </div>
+    </section>
+
+    <section class="progress-hero" aria-labelledby="level-title">
+        <div class="progress-level">
+            <p class="progress-kicker">Level {{ level.number }} of 10</p>
+            <h2 id="level-title">{{ level.title }}</h2>
+            <p class="progress-level-ar" lang="ar" dir="rtl">{{ level.arabic_title }}</p>
+            <p class="progress-tagline">{{ level.tagline }}</p>
+        </div>
+        <div class="progress-meter-wrap">
+            <div
+                class="progress-meter"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="{{ level_percent }}"
+                aria-label="Progress to level {{ next_level.number|default:10 }}"
+            >
+                <span class="progress-meter-fill" style="width: {{ level_percent }}%"></span>
+            </div>
+            <p class="progress-meter-label">
+                {% if next_level %}
+                    <strong>{{ points }}</strong> points ·
+                    {{ points_to_next }} to {{ next_level.title }}
+                    ({{ next_level.arabic_title }})
+                {% else %}
+                    Top level reached · <strong>{{ points }}</strong> points
+                {% endif %}
+            </p>
+        </div>
+    </section>
+
+    <section class="stat-grid" aria-label="Your study numbers">
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">🔥</span>
+            <strong>{{ streak }}</strong>
+            <p>day{{ streak|pluralize }} streak</p>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">★</span>
+            <strong>{{ longest_streak }}</strong>
+            <p>longest streak</p>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">✦</span>
+            <strong>{{ points }}</strong>
+            <p>points</p>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon" aria-hidden="true">◷</span>
+            <strong>{{ cards_today }}/{{ goal }}</strong>
+            <p>cards today</p>
+        </div>
+    </section>
+
+    <section class="daily-goal{% if streak_ready %} is-done{% endif %}" aria-label="Today's goal">
+        <div class="daily-goal-text">
+            {% if streak_ready %}
+                <strong>Today's goal is done.</strong>
+                <span>Streak day secured — keep reviewing, every correct answer is 5 more points.</span>
+            {% else %}
+                <strong>{{ goal_remaining }} card{{ goal_remaining|pluralize }} to today's streak.</strong>
+                <span>5 points for a correct answer, 1 for a wrong one. Ten cards add a streak day and 20 bonus points.</span>
+            {% endif %}
+        </div>
+        <div class="daily-goal-meter" aria-hidden="true">
+            {% if cards_today >= goal %}
+                <span style="width: 100%"></span>
+            {% else %}
+                {% widthratio cards_today goal 100 as today_percent %}
+                <span style="width: {{ today_percent }}%"></span>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="level-ladder" aria-labelledby="ladder-title">
+        <h2 class="section-label" id="ladder-title">The road to professor</h2>
+        <ol class="level-list">
+            {% for row in levels %}
+                <li class="level-row{% if row.current %} is-current{% elif row.unlocked %} is-unlocked{% endif %}">
+                    <span class="level-number" aria-hidden="true">{{ row.level.number }}</span>
+                    <span class="level-titles">
+                        <span class="level-ar" lang="ar" dir="rtl">{{ row.level.arabic_title }}</span>
+                        <span class="level-en">{{ row.level.title }}</span>
+                    </span>
+                    <span class="level-points">
+                        {% if row.current %}
+                            You are here
+                        {% elif row.unlocked %}
+                            Unlocked
+                        {% else %}
+                            {{ row.level.points }} pts
+                        {% endif %}
+                    </span>
+                </li>
+            {% endfor %}
+        </ol>
+    </section>
+
+    <section class="reminder-panel" aria-labelledby="reminder-title">
+        <div class="reminder-copy">
+            <p class="eyebrow">STUDY NUDGE</p>
+            <h2 id="reminder-title">WhatsApp reminder</h2>
+            <p>
+                Get a friendly nudge with your streak, points and cards due.
+                Save your number and open WhatsApp for a reminder you can send
+                to yourself in one tap.
+            </p>
+            {% if whatsapp_link %}
+                <a class="button button-secondary" href="{{ whatsapp_link }}" target="_blank" rel="noopener">
+                    Open WhatsApp reminder
+                </a>
+                <details class="reminder-preview">
+                    <summary>Preview the message</summary>
+                    <pre>{{ reminder_preview }}</pre>
+                </details>
+            {% else %}
+                <p class="reminder-hint">Save a number to unlock the one-tap WhatsApp reminder.</p>
+            {% endif %}
+            {% if due_count %}
+                <p class="reminder-note">{{ due_count }} card{{ due_count|pluralize }} ready for review right now.</p>
+            {% endif %}
+        </div>
+
+        <form method="post" class="reminder-form">
+            {% csrf_token %}
+            <p>
+                <label for="{{ reminder_form.phone_number.id_for_label }}">{{ reminder_form.phone_number.label }}</label>
+                {{ reminder_form.phone_number }}
+                {% for error in reminder_form.phone_number.errors %}
+                    <span class="field-error" role="alert">{{ error }}</span>
+                {% endfor %}
+                <small>{{ reminder_form.phone_number.help_text }}</small>
+            </p>
+            <p>
+                <label for="{{ reminder_form.reminder_time.id_for_label }}">{{ reminder_form.reminder_time.label }}</label>
+                {{ reminder_form.reminder_time }}
+                {% for error in reminder_form.reminder_time.errors %}
+                    <span class="field-error" role="alert">{{ error }}</span>
+                {% endfor %}
+                <small>{{ reminder_form.reminder_time.help_text }}</small>
+            </p>
+            <p class="reminder-checkbox">
+                {{ reminder_form.enabled }}
+                <label for="{{ reminder_form.enabled.id_for_label }}">{{ reminder_form.enabled.label }}</label>
+            </p>
+            {% for error in reminder_form.enabled.errors %}
+                <span class="field-error" role="alert">{{ error }}</span>
+            {% endfor %}
+            <button class="button button-primary" type="submit">Save reminder</button>
+        </form>
+    </section>
+{% endblock content %}

@@ -20,7 +20,11 @@ from django.utils import timezone
 from django.urls import NoReverseMatch, reverse
 
 from cards.forms import CardForm
-from cards.models import Card, DictionaryEntry
+from cards.levels import LEVELS, level_for_points, level_progress
+from cards.models import Card, DictionaryEntry, StudyProgress, StudyReminder
+from cards.progress import progress_summary
+from cards.reminders import build_reminder_message
+from cards.whatsapp import WhatsAppNotConfigured, whatsapp_deep_link
 
 
 class ArabicDisplayParser(HTMLParser):
@@ -705,6 +709,39 @@ class AccountDeckTests(TestCase):
 		self.assertContains(response, 'class="mobile-nav-icon account-initials"')
 		self.assertContains(response, "MO")
 		self.assertNotContains(response, 'aria-hidden="true">•••</span>')
+
+	def test_desktop_account_menu_uses_initials_and_contains_account_actions(self):
+		user = get_user_model().objects.create_user(
+			"DesktopOwner",
+			password="Correct-Horse-92!",
+		)
+		StudyProgress.objects.create(user=user, points=300)
+		self.client.force_login(user)
+
+		response = self.client.get(reverse("card-list"))
+
+		self.assertContains(response, 'class="desktop-account"')
+		self.assertContains(response, 'class="desktop-account-initials"')
+		self.assertContains(response, "DE")
+		self.assertContains(
+			response,
+			'aria-label="Account menu for DesktopOwner"',
+		)
+		self.assertContains(response, "Level 2 · 300 pts")
+		self.assertContains(response, "Letter Apprentice")
+		self.assertContains(response, reverse("progress"))
+		self.assertContains(response, reverse("card-import"))
+		self.assertContains(response, reverse("card-export"))
+		self.assertContains(
+			response,
+			f'action="{reverse("logout")}"',
+		)
+		self.assertContains(response, "Log out")
+
+	def test_desktop_account_menu_is_hidden_from_anonymous_users(self):
+		response = self.client.get(reverse("login"))
+
+		self.assertNotContains(response, 'class="desktop-account"')
 
 	def test_navigation_counts_are_loaded_once_for_desktop_and_mobile(self):
 		user = get_user_model().objects.create_user("navigation-count-owner")
@@ -1855,3 +1892,395 @@ class ConsolidateQuestionMigrationTests(TransactionTestCase):
 				LegacyCard.objects.filter(user_id=user.pk).delete()
 				User.objects.filter(pk=user.pk).delete()
 			MigrationExecutor(connection).migrate(self.latest_migration)
+
+
+class StudyProgressTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user("studious")
+		self.client.force_login(self.user)
+		self.card = Card.objects.create(
+			user=self.user,
+			question="Luck",
+			answer="حظ",
+			answer_vocalized="حَظّ",
+		)
+
+	def review(self, solved="on", follow=False):
+		return self.client.post(
+			reverse("todo-list"),
+			{"card_id": self.card.pk, "solved": solved},
+			HTTP_REFERER=reverse("todo-list"),
+			follow=follow,
+		)
+
+	def progress(self):
+		return StudyProgress.objects.get(user=self.user)
+
+	def test_review_awards_five_points_for_a_correct_answer_and_counts_today(self):
+		self.review()
+
+		progress = self.progress()
+		self.assertEqual(progress.points, 5)
+		self.assertEqual(progress.cards_today, 1)
+		self.assertEqual(progress.current_streak, 0)
+		self.assertEqual(progress.cards_today_date, timezone.localdate())
+
+	def test_review_awards_one_point_for_a_wrong_answer(self):
+		self.review(solved="")
+
+		progress = self.progress()
+		self.assertEqual(progress.points, 1)
+		self.assertEqual(progress.cards_today, 1)
+
+	def test_practice_awards_five_points_for_a_correct_answer(self):
+		self.client.get(reverse("practice-all-cards"), {"start": "1"})
+		session_key = f"card_practice_{self.user.pk}_all"
+		card_id = self.client.session[session_key][0]
+
+		self.client.post(
+			reverse("practice-all-cards"),
+			{"card_id": card_id, "solved": "on"},
+		)
+
+		self.assertEqual(self.progress().points, 5)
+		self.assertEqual(self.progress().cards_today, 1)
+
+	def test_ten_reviews_award_the_daily_streak_bonus(self):
+		response = None
+		for _ in range(10):
+			response = self.review(follow=True)
+
+		progress = self.progress()
+		self.assertEqual(progress.points, 70)
+		self.assertEqual(progress.cards_today, 10)
+		self.assertEqual(progress.current_streak, 1)
+		self.assertEqual(progress.longest_streak, 1)
+		self.assertEqual(progress.last_streak_date, timezone.localdate())
+		self.assertContains(response, "Daily goal reached")
+		self.assertContains(response, "+20 points")
+
+	def test_streak_bonus_is_awarded_only_once_per_day(self):
+		for _ in range(12):
+			self.review()
+
+		progress = self.progress()
+		self.assertEqual(progress.points, 80)
+		self.assertEqual(progress.current_streak, 1)
+
+	def test_consecutive_day_extends_the_streak(self):
+		progress = StudyProgress.objects.create(
+			user=self.user,
+			points=40,
+			cards_today=0,
+			cards_today_date=timezone.localdate(),
+			current_streak=1,
+			longest_streak=1,
+			last_streak_date=timezone.localdate() - timedelta(days=1),
+		)
+
+		for _ in range(10):
+			self.review()
+
+		progress.refresh_from_db()
+		self.assertEqual(progress.current_streak, 2)
+		self.assertEqual(progress.longest_streak, 2)
+		self.assertEqual(progress.points, 110)
+
+	def test_missed_day_resets_the_streak_but_keeps_the_record(self):
+		progress = StudyProgress.objects.create(
+			user=self.user,
+			points=40,
+			cards_today=0,
+			cards_today_date=timezone.localdate(),
+			current_streak=4,
+			longest_streak=4,
+			last_streak_date=timezone.localdate() - timedelta(days=3),
+		)
+
+		for _ in range(10):
+			self.review()
+
+		progress.refresh_from_db()
+		self.assertEqual(progress.current_streak, 1)
+		self.assertEqual(progress.longest_streak, 4)
+		self.assertEqual(progress.points, 110)
+
+	def test_stale_streak_is_displayed_as_zero(self):
+		StudyProgress.objects.create(
+			user=self.user,
+			current_streak=5,
+			longest_streak=5,
+			last_streak_date=timezone.localdate() - timedelta(days=2),
+		)
+
+		self.assertEqual(progress_summary(self.user)["streak"], 0)
+
+	def test_yesterday_streak_still_counts_until_today_is_missed(self):
+		StudyProgress.objects.create(
+			user=self.user,
+			current_streak=5,
+			longest_streak=5,
+			last_streak_date=timezone.localdate() - timedelta(days=1),
+		)
+
+		self.assertEqual(progress_summary(self.user)["streak"], 5)
+
+	def test_level_boundaries(self):
+		cases = [
+			(0, 1),
+			(239, 1),
+			(240, 2),
+			(639, 2),
+			(640, 3),
+			(1279, 3),
+			(1280, 4),
+			(13000, 10),
+			(999999, 10),
+		]
+		for points, expected in cases:
+			with self.subTest(points=points):
+				self.assertEqual(level_for_points(points).number, expected)
+
+	def test_level_progress_percentage(self):
+		current, upcoming, percent = level_progress(120)
+
+		self.assertEqual(current.number, 1)
+		self.assertEqual(upcoming.number, 2)
+		self.assertEqual(percent, 50)
+
+		_top, upcoming, percent = level_progress(13000)
+		self.assertIsNone(upcoming)
+		self.assertEqual(percent, 100)
+
+	def test_header_shows_streak_points_and_level(self):
+		StudyProgress.objects.create(
+			user=self.user,
+			points=300,
+			cards_today=4,
+			cards_today_date=timezone.localdate(),
+			current_streak=3,
+			longest_streak=3,
+			last_streak_date=timezone.localdate(),
+		)
+
+		response = self.client.get(reverse("card-list"))
+
+		self.assertContains(response, "study-stats--desktop")
+		self.assertContains(response, "study-stats--mobile")
+		self.assertContains(response, "تلميذ الحروف")
+		self.assertContains(response, "Letter Apprentice")
+		self.assertContains(response, "<strong>300</strong> pts")
+		self.assertContains(response, "4/10")
+
+	def test_learning_toolbar_shows_todays_goal(self):
+		StudyProgress.objects.create(
+			user=self.user,
+			points=12,
+			cards_today=6,
+			cards_today_date=timezone.localdate(),
+			last_streak_date=timezone.localdate(),
+			current_streak=1,
+		)
+
+		response = self.client.get(reverse("todo-list"))
+
+		self.assertContains(response, "learning-goal")
+		self.assertContains(response, "6/10")
+
+	def test_progress_page_lists_every_level(self):
+		response = self.client.get(reverse("progress"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "The road to professor")
+		for level in LEVELS:
+			self.assertContains(response, level.title)
+			self.assertContains(response, level.arabic_title)
+
+	def test_progress_page_explains_the_scoring(self):
+		response = self.client.get(reverse("progress"))
+
+		self.assertContains(response, "5 points for a correct answer")
+		self.assertContains(response, "20 bonus points")
+		self.assertContains(response, "10 cards")
+
+	def test_reminder_form_normalizes_and_saves_the_number(self):
+		response = self.client.post(
+			reverse("progress"),
+			{
+				"phone_number": "+31 6 1234 5678",
+				"reminder_time": "19:00",
+				"enabled": "on",
+			},
+		)
+
+		self.assertRedirects(response, reverse("progress"))
+		reminder = StudyReminder.objects.get(user=self.user)
+		self.assertEqual(reminder.phone_number, "+31612345678")
+		self.assertTrue(reminder.enabled)
+		self.assertEqual(reminder.reminder_time.strftime("%H:%M"), "19:00")
+
+	def test_reminder_form_rejects_a_number_without_country_code(self):
+		response = self.client.post(
+			reverse("progress"),
+			{
+				"phone_number": "0612345678",
+				"reminder_time": "19:00",
+				"enabled": "on",
+			},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "international format")
+		self.assertFalse(StudyReminder.objects.get(user=self.user).enabled)
+
+	def test_enabling_reminders_requires_a_number(self):
+		response = self.client.post(
+			reverse("progress"),
+			{
+				"phone_number": "",
+				"reminder_time": "19:00",
+				"enabled": "on",
+			},
+		)
+
+		self.assertContains(response, "Add a number to receive WhatsApp reminders.")
+
+	def test_progress_page_does_not_show_server_setup(self):
+		response = self.client.get(reverse("progress"))
+
+		self.assertNotContains(response, "manage.py")
+		self.assertNotContains(response, "WHATSAPP_ACCESS_TOKEN")
+		self.assertNotContains(response, "cron")
+
+	def test_progress_page_offers_a_whatsapp_deep_link(self):
+		StudyReminder.objects.create(
+			user=self.user,
+			phone_number="+31612345678",
+			enabled=True,
+		)
+
+		response = self.client.get(reverse("progress"))
+
+		self.assertContains(response, "https://wa.me/31612345678?text=")
+		self.assertContains(response, "Open WhatsApp reminder")
+
+	def test_deep_link_encodes_the_message(self):
+		link = whatsapp_deep_link("+31 6 1234 5678", "hello world")
+
+		self.assertEqual(link, "https://wa.me/31612345678?text=hello%20world")
+
+	def test_reminder_message_includes_progress_and_due_cards(self):
+		StudyProgress.objects.create(
+			user=self.user,
+			points=42,
+			cards_today=2,
+			cards_today_date=timezone.localdate(),
+			current_streak=3,
+			longest_streak=3,
+			last_streak_date=timezone.localdate(),
+		)
+
+		message = build_reminder_message(self.user, due_count=5)
+
+		self.assertIn("3 days", message)
+		self.assertIn("42 points", message)
+		self.assertIn("5 cards ready", message)
+		self.assertIn("طالب صغير", message)
+		self.assertIn("2/10", message)
+
+
+class SendStudyRemindersTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user("reminded")
+		self.reminder = StudyReminder.objects.create(
+			user=self.user,
+			phone_number="+31612345678",
+			enabled=True,
+			reminder_time=timezone.localtime().replace(
+				second=0,
+				microsecond=0,
+			).time(),
+		)
+
+	@patch("cards.management.commands.send_study_reminders.send_whatsapp_message")
+	def test_sends_once_per_day(self, send_message):
+		call_command("send_study_reminders", stdout=StringIO())
+		call_command("send_study_reminders", stdout=StringIO())
+
+		self.assertEqual(send_message.call_count, 1)
+		self.reminder.refresh_from_db()
+		self.assertEqual(self.reminder.last_sent_on, timezone.localdate())
+
+	@patch("cards.management.commands.send_study_reminders.send_whatsapp_message")
+	def test_dry_run_prints_without_sending(self, send_message):
+		output = StringIO()
+
+		call_command("send_study_reminders", "--dry-run", stdout=output)
+
+		send_message.assert_not_called()
+		self.assertIn("مرحبا reminded", output.getvalue())
+		self.reminder.refresh_from_db()
+		self.assertIsNone(self.reminder.last_sent_on)
+
+	@patch("cards.management.commands.send_study_reminders.send_whatsapp_message")
+	def test_skips_disabled_reminders(self, send_message):
+		StudyReminder.objects.filter(pk=self.reminder.pk).update(enabled=False)
+
+		call_command("send_study_reminders", stdout=StringIO())
+
+		send_message.assert_not_called()
+
+	@patch("cards.management.commands.send_study_reminders.send_whatsapp_message")
+	def test_skips_reminders_outside_their_hour(self, send_message):
+		outside = (
+			timezone.localtime() - timedelta(hours=3)
+		).replace(second=0, microsecond=0).time()
+		StudyReminder.objects.filter(pk=self.reminder.pk).update(
+			reminder_time=outside,
+		)
+
+		call_command("send_study_reminders", stdout=StringIO())
+
+		send_message.assert_not_called()
+
+	@patch(
+		"cards.management.commands.send_study_reminders.send_whatsapp_message",
+		side_effect=WhatsAppNotConfigured("missing credentials"),
+	)
+	def test_reports_missing_configuration(self, send_message):
+		errors = StringIO()
+
+		call_command("send_study_reminders", stderr=errors)
+
+		self.assertIn("not configured", errors.getvalue())
+
+	@patch("cards.management.commands.send_study_reminders.send_whatsapp_message")
+	def test_force_resends_on_the_same_day(self, send_message):
+		self.reminder.last_sent_on = timezone.localdate()
+		self.reminder.save(update_fields=["last_sent_on"])
+
+		call_command("send_study_reminders", "--force", stdout=StringIO())
+
+		send_message.assert_called_once()
+
+	@patch("cards.management.commands.send_study_reminders.send_whatsapp_message")
+	def test_user_filter(self, send_message):
+		other = get_user_model().objects.create_user("other-reminded")
+		StudyReminder.objects.create(
+			user=other,
+			phone_number="+31698765432",
+			enabled=True,
+			reminder_time=self.reminder.reminder_time,
+		)
+
+		call_command(
+			"send_study_reminders",
+			"--user",
+			"reminded",
+			stdout=StringIO(),
+		)
+
+		self.assertEqual(send_message.call_count, 1)
+		self.reminder.refresh_from_db()
+		self.assertEqual(self.reminder.last_sent_on, timezone.localdate())
+		self.assertIsNone(StudyReminder.objects.get(user=other).last_sent_on)

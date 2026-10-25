@@ -42,6 +42,11 @@ urlpatterns = [
          views.CardExportView.as_view(),
          name="card-export",
      ),
+     path(
+         "progress/",
+         views.StudyProgressView.as_view(),
+         name="progress",
+     ),
     path(
         "edit/<int:pk>",
         views.CardUpdateView.as_view(),

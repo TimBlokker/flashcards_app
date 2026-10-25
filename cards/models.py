@@ -64,6 +64,38 @@ class Card(models.Model):
         to_repeat = (now - self.date_moved- datetime.timedelta(days=min_age[self.box])).total_seconds() > 0
         return to_repeat
 
+class StudyProgress(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name="study_progress",
+        on_delete=models.CASCADE,
+    )
+    points = models.PositiveIntegerField(default=0)
+    cards_today = models.PositiveIntegerField(default=0)
+    cards_today_date = models.DateField(null=True, blank=True)
+    current_streak = models.PositiveIntegerField(default=0)
+    longest_streak = models.PositiveIntegerField(default=0)
+    last_streak_date = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user} study progress"
+
+
+class StudyReminder(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name="study_reminder",
+        on_delete=models.CASCADE,
+    )
+    phone_number = models.CharField(max_length=20, blank=True)
+    reminder_time = models.TimeField(default=datetime.time(19, 0))
+    enabled = models.BooleanField(default=False)
+    last_sent_on = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user} WhatsApp reminder"
+
+
 class DictionaryEntry(models.Model):
     language_pair = models.CharField(max_length=16, default="en-ar")
     headword = models.CharField(max_length=255)

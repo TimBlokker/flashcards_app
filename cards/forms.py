@@ -1,8 +1,11 @@
 # cards/forms.py
+import re
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q
-from .models import BOXES, Card, DictionaryEntry
+
+from .models import BOXES, Card, DictionaryEntry, StudyReminder
 from .card_import import parse_card_import
 from .arabic import contains_arabic, contains_latin
 
@@ -150,4 +153,42 @@ class CardImportForm(forms.Form):
         cleaned_data["rows"] = import_rows
         cleaned_data["duplicate_count"] = duplicate_count
         cleaned_data["duplicate_questions"] = duplicate_questions
+        return cleaned_data
+
+
+class StudyReminderForm(forms.ModelForm):
+    class Meta:
+        model = StudyReminder
+        fields = ["phone_number", "reminder_time", "enabled"]
+        labels = {
+            "phone_number": "WhatsApp number",
+            "reminder_time": "Remind me at",
+            "enabled": "Send automatic reminders",
+        }
+        help_texts = {
+            "phone_number": "Include the country code, e.g. +31 6 1234 5678.",
+            "reminder_time": "Local time.",
+        }
+        widgets = {
+            "reminder_time": forms.TimeInput(attrs={"type": "time"}),
+        }
+
+    def clean_phone_number(self):
+        value = (self.cleaned_data.get("phone_number") or "").strip()
+        if not value:
+            return ""
+        normalized = re.sub(r"[\s().-]", "", value)
+        if not re.fullmatch(r"\+[1-9]\d{6,14}", normalized):
+            raise ValidationError(
+                "Enter the number in international format, e.g. +31612345678."
+            )
+        return normalized
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("enabled") and not cleaned_data.get("phone_number"):
+            self.add_error(
+                "phone_number",
+                "Add a number to receive WhatsApp reminders.",
+            )
         return cleaned_data
