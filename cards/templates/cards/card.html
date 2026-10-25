@@ -3,12 +3,12 @@
     <div class="card-content">
     <p class="card-side-label">QUESTION</p>
     {% if card.question_vocalized %}
-    <span class="arabic-display" lang="ar" dir="rtl">
+    <span class="arabic-display {% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}" lang="ar" dir="rtl">
       <span class="arabic-text">{{ card.question }}</span>
       <span class="vocalized-answer">{{ card.question_vocalized }}</span>
     </span>
     {% else %}
-    <h4>{{ card.question }}</h4>
+    <h4 class="{% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}">{{ card.question }}</h4>
     {% endif %}
     {% if card.answer_vocalized or card.answer_dictionary_vocalized %}
     <span class="arabic-display card-answer" lang="ar" dir="rtl">
@@ -48,12 +48,12 @@
                     {% else %}
                         <p class="card-side-label">QUESTION</p>
                         {% if card.question_vocalized %}
-                            <span id="question-{{ card.id }}" class="arabic-display" lang="ar" dir="rtl">
+                            <span id="question-{{ card.id }}" class="arabic-display {% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}" lang="ar" dir="rtl">
                                 <span class="arabic-text">{{ card.question }}</span>
                                 <span class="vocalized-answer">{{ card.question_vocalized }}</span>
                             </span>
                         {% else %}
-                            <h4 id="question-{{ card.id }}">{{ card.question }}</h4>
+                            <h4 id="question-{{ card.id }}" class="{% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}">{{ card.question }}</h4>
                         {% endif %}
                     {% endif %}
                 </section>
@@ -61,12 +61,12 @@
                     {% if flipped %}
                         <p class="card-side-label">ANSWER</p>
                         {% if card.question_vocalized %}
-                            <span id="question-{{ card.id }}" class="arabic-display" lang="ar" dir="rtl">
+                            <span id="question-{{ card.id }}" class="arabic-display {% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}" lang="ar" dir="rtl">
                                 <span class="arabic-text">{{ card.question }}</span>
                                 <span class="vocalized-answer">{{ card.question_vocalized }}</span>
                             </span>
                         {% else %}
-                            <h4 id="question-{{ card.id }}">{{ card.question }}</h4>
+                            <h4 id="question-{{ card.id }}" class="{% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}">{{ card.question }}</h4>
                         {% endif %}
                     {% else %}
                         <p class="card-side-label">ANSWER</p>

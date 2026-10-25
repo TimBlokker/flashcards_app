@@ -18,7 +18,10 @@ class CardForm(forms.ModelForm):
     class Meta:
         model = Card
         fields = ["question", "answer", "answer_vocalized", "box"]
-        labels = {"answer": "Answer / translation"}
+        labels = {
+            "question": "Question",
+            "answer": "Answer / translation",
+        }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

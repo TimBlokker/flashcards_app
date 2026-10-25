@@ -297,6 +297,21 @@ class AccountDeckTests(TestCase):
 		)
 		self.assertTrue(other_user_form.is_valid())
 
+	def test_card_question_form_accepts_up_to_500_characters(self):
+		valid_form = CardForm(data={
+			"question": "q" * 500,
+			"answer": "translation",
+			"box": 1,
+		})
+		invalid_form = CardForm(data={
+			"question": "q" * 501,
+			"answer": "translation",
+			"box": 1,
+		})
+
+		self.assertTrue(valid_form.is_valid(), valid_form.errors)
+		self.assertFalse(invalid_form.is_valid())
+
 	def test_database_prevents_duplicate_question_per_user(self):
 		user = get_user_model().objects.create_user("unique-question-owner")
 		Card.objects.create(user=user, question="question", answer="translation")
@@ -539,6 +554,54 @@ class AccountDeckTests(TestCase):
 					response,
 					f'aria-labelledby="answer-{check_card.pk}"',
 				)
+
+	def test_practice_flip_orientation_is_preserved_for_the_session(self):
+		user = get_user_model().objects.create_user("practice-flip-session-owner")
+		first_card = Card.objects.create(
+			user=user,
+			question="First question",
+			answer="First answer",
+		)
+		Card.objects.create(
+			user=user,
+			question="Second question",
+			answer="Second answer",
+		)
+		self.client.force_login(user)
+		url = reverse("practice-all-cards")
+
+		self.client.get(url, {"start": "1"}, follow=True)
+		response = self.client.get(url, {"flip": "1"})
+		self.assertTrue(response.context["flipped"])
+		card = response.context["check_card"]
+
+		self.client.post(url, {"card_id": card.pk, "solved": "on"})
+		response = self.client.get(url)
+		self.assertTrue(response.context["flipped"])
+		self.assertNotEqual(response.context["check_card"].pk, card.pk)
+
+		self.client.get(url, {"flip": "0"})
+		response = self.client.get(url)
+		self.assertFalse(response.context["flipped"])
+
+	def test_long_practice_question_is_rendered_without_truncation(self):
+		user = get_user_model().objects.create_user("long-question-practice-owner")
+		question = "A long question " * 25
+		Card.objects.create(
+			user=user,
+			question=question,
+			answer="Answer",
+		)
+		self.client.force_login(user)
+
+		response = self.client.get(
+			reverse("practice-all-cards"),
+			{"start": "1"},
+			follow=True,
+		)
+
+		self.assertContains(response, question)
+		self.assertContains(response, 'class="card-text-very-long"')
 
 	def test_learning_views_use_focused_layout_with_exit_control(self):
 		user = get_user_model().objects.create_user("focused-learning-owner")
@@ -1190,7 +1253,7 @@ class ArabicVocalizationTests(TestCase):
 class ConsolidateQuestionMigrationTests(TransactionTestCase):
 	latest_migration = [(
 		"cards",
-		"0014_remove_card_category_and_account_category_settings",
+		"0015_reorient_arabic_cards_and_expand_questions",
 	)]
 
 	def test_migration_handles_collisions_and_restores_questions_on_rollback(self):
@@ -1339,4 +1402,167 @@ class ConsolidateQuestionMigrationTests(TransactionTestCase):
 			self.assertNotIn("category", card_columns)
 			self.assertNotIn("cards_accountcategorysettings", table_names)
 		finally:
+			MigrationExecutor(connection).migrate(self.latest_migration)
+
+	def test_arabic_question_migration_reorients_pairs_without_changing_ids(self):
+		before_migration = [(
+			"cards",
+			"0014_remove_card_category_and_account_category_settings",
+		)]
+		after_migration = [(
+			"cards",
+			"0015_reorient_arabic_cards_and_expand_questions",
+		)]
+
+		try:
+			MigrationExecutor(connection).migrate(before_migration)
+			old_apps = MigrationExecutor(connection).loader.project_state(
+				before_migration
+			).apps
+			User = old_apps.get_model("auth", "User")
+			LegacyCard = old_apps.get_model("cards", "Card")
+			user = User.objects.create(username="arabic-reorientation-owner")
+			reversed_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="مَرْحَبًا",
+				answer="Hello",
+				answer_vocalized="stale vocalization",
+			)
+			already_oriented_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="Good morning",
+				answer="صَبَاحُ الْخَيْرِ",
+				answer_vocalized="صَبَاحُ الْخَيْرِ",
+			)
+			both_arabic_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="أَهْلًا",
+				answer="أَهْلًا",
+				answer_vocalized="",
+			)
+			card_ids = {
+				reversed_card.pk,
+				already_oriented_card.pk,
+				both_arabic_card.pk,
+			}
+
+			MigrationExecutor(connection).migrate(after_migration)
+			current_apps = MigrationExecutor(connection).loader.project_state(
+				after_migration
+			).apps
+			CurrentCard = current_apps.get_model("cards", "Card")
+			reversed_card = CurrentCard.objects.get(pk=reversed_card.pk)
+			already_oriented_card = CurrentCard.objects.get(
+				pk=already_oriented_card.pk
+			)
+			both_arabic_card = CurrentCard.objects.get(pk=both_arabic_card.pk)
+
+			self.assertEqual(
+				(reversed_card.question, reversed_card.answer),
+				("Hello", "مَرْحَبًا"),
+			)
+			self.assertEqual(reversed_card.answer_vocalized, "")
+			self.assertEqual(
+				(already_oriented_card.question, already_oriented_card.answer),
+				("Good morning", "صَبَاحُ الْخَيْرِ"),
+			)
+			self.assertEqual(
+				(both_arabic_card.question, both_arabic_card.answer),
+				("أَهْلًا", "أَهْلًا"),
+			)
+			self.assertEqual(
+				set(CurrentCard.objects.filter(user_id=user.pk).values_list("pk", flat=True)),
+				card_ids,
+			)
+			self.assertEqual(
+				CurrentCard._meta.get_field("question").max_length,
+				500,
+			)
+			self.assertEqual(CurrentCard._meta.pk.get_internal_type(), "BigAutoField")
+		finally:
+			MigrationExecutor(connection).migrate(self.latest_migration)
+
+	def test_arabic_question_migration_reports_conflicts_before_changing_data(self):
+		before_migration = [(
+			"cards",
+			"0014_remove_card_category_and_account_category_settings",
+		)]
+		after_migration = [(
+			"cards",
+			"0015_reorient_arabic_cards_and_expand_questions",
+		)]
+
+		try:
+			MigrationExecutor(connection).migrate(before_migration)
+			old_apps = MigrationExecutor(connection).loader.project_state(
+				before_migration
+			).apps
+			User = old_apps.get_model("auth", "User")
+			LegacyCard = old_apps.get_model("cards", "Card")
+			user = User.objects.create(username="arabic-reorientation-conflict")
+			reversed_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="مَرْحَبًا",
+				answer="Hello",
+				answer_vocalized="stale vocalization",
+			)
+			existing_card = LegacyCard.objects.create(
+				user_id=user.pk,
+				question="Hello",
+				answer="مرحبا",
+				answer_vocalized="مَرْحَبًا",
+			)
+
+			with self.assertRaisesRegex(
+				RuntimeError,
+				"question collision",
+			) as error:
+				MigrationExecutor(connection).migrate(after_migration)
+
+			self.assertIn(str(reversed_card.pk), str(error.exception))
+			self.assertIn(str(existing_card.pk), str(error.exception))
+			self.assertEqual(
+				list(
+					LegacyCard.objects.filter(user_id=user.pk)
+					.order_by("pk")
+					.values_list("pk", "question", "answer", "answer_vocalized")
+				),
+				[
+					(
+						reversed_card.pk,
+						"مَرْحَبًا",
+						"Hello",
+						"stale vocalization",
+					),
+					(
+						existing_card.pk,
+						"Hello",
+						"مرحبا",
+						"مَرْحَبًا",
+					),
+				],
+			)
+			self.assertNotIn(
+				("cards", "0015_reorient_arabic_cards_and_expand_questions"),
+				MigrationExecutor(connection).loader.applied_migrations,
+			)
+			with connection.cursor() as cursor:
+				column_names = {
+					column.name
+					for column in connection.introspection.get_table_description(
+						cursor,
+						LegacyCard._meta.db_table,
+					)
+				}
+			self.assertEqual(
+				LegacyCard._meta.get_field("question").max_length,
+				100,
+			)
+			self.assertTrue(
+				{"question", "answer", "answer_vocalized"}.issubset(column_names)
+			)
+		finally:
+			if "user" in locals():
+				LegacyCard.objects.filter(user_id=user.pk).delete()
+				User.objects.filter(pk=user.pk).delete()
 			MigrationExecutor(connection).migrate(self.latest_migration)

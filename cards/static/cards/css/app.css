@@ -397,6 +397,24 @@ summary:focus-visible {
     overflow-wrap: anywhere;
 }
 
+.flashcard h4.card-text-long {
+    font-size: clamp(1.15rem, 3.4vw, 1.65rem);
+    letter-spacing: -0.02em;
+}
+
+.flashcard h4.card-text-very-long {
+    font-size: clamp(1rem, 2.8vw, 1.35rem);
+    letter-spacing: -0.01em;
+}
+
+.arabic-display.card-text-long .arabic-text {
+    font-size: 0.95rem;
+}
+
+.arabic-display.card-text-very-long .arabic-text {
+    font-size: 0.85rem;
+}
+
 .card-side-label {
     margin-bottom: 0.55rem;
     color: var(--muted);
@@ -586,6 +604,24 @@ body.learning-mode .flashcard-review {
 .flip-face h4 {
     margin: 0.2rem 0 0.65rem;
     font-size: clamp(1.8rem, 6vw, 2.7rem);
+}
+
+.flip-face h4.card-text-long {
+    font-size: clamp(1.35rem, 4vw, 2rem);
+    letter-spacing: -0.02em;
+}
+
+.flip-face h4.card-text-very-long {
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    letter-spacing: -0.01em;
+}
+
+.flip-face .arabic-display.card-text-long .arabic-text {
+    font-size: clamp(1.35rem, 4vw, 2rem);
+}
+
+.flip-face .arabic-display.card-text-very-long .arabic-text {
+    font-size: clamp(1rem, 3vw, 1.5rem);
 }
 
 .flip-face .vocalized-answer {
