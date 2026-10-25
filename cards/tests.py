@@ -5,6 +5,7 @@ from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.contrib.auth import get_user_model
@@ -923,6 +924,90 @@ class CardImportTests(TestCase):
 
 
 class ArabicVocalizationTests(TestCase):
+	def test_bulk_vocalization_only_fills_blank_answers_for_current_user(self):
+		user = get_user_model().objects.create_user("bulk-vocalization-owner")
+		other_user = get_user_model().objects.create_user("bulk-vocalization-other")
+		missing_card = Card.objects.create(
+			user=user,
+			question="Arabic answer",
+			answer="هي تحب ان تذهب",
+		)
+		existing_card = Card.objects.create(
+			user=user,
+			question="Already vocalized",
+			answer="صباح الخير",
+			answer_vocalized="صَبَاحُ الْخَيْرِ",
+		)
+		non_arabic_card = Card.objects.create(
+			user=user,
+			question="English answer",
+			answer="Good morning",
+		)
+		other_users_card = Card.objects.create(
+			user=other_user,
+			question="Other user's answer",
+			answer="صباح الخير",
+		)
+		self.client.force_login(user)
+
+		with patch(
+			"cards.views.vocalize_arabic",
+			return_value="هِيَ تُحِبُّ أَنْ تَذْهَبَ",
+		) as vocalize:
+			response = self.client.post(
+				reverse("vocalize-missing-cards"),
+				follow=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Vocalize missing answers")
+		self.assertContains(
+			response,
+			"Vocalized 1 card. Skipped 1 answer without Arabic text.",
+		)
+		vocalize.assert_called_once_with("هي تحب ان تذهب")
+		missing_card.refresh_from_db()
+		existing_card.refresh_from_db()
+		non_arabic_card.refresh_from_db()
+		other_users_card.refresh_from_db()
+		self.assertEqual(
+			missing_card.answer_vocalized,
+			"هِيَ تُحِبُّ أَنْ تَذْهَبَ",
+		)
+		self.assertEqual(existing_card.answer_vocalized, "صَبَاحُ الْخَيْرِ")
+		self.assertEqual(non_arabic_card.answer_vocalized, "")
+		self.assertEqual(other_users_card.answer_vocalized, "")
+
+	def test_bulk_vocalization_reports_mishkal_failures(self):
+		user = get_user_model().objects.create_user("bulk-vocalization-failure")
+		card = Card.objects.create(
+			user=user,
+			question="Arabic answer",
+			answer="هي تحب ان تذهب",
+		)
+		self.client.force_login(user)
+
+		with patch("cards.views.vocalize_arabic", return_value=""):
+			response = self.client.post(
+				reverse("vocalize-missing-cards"),
+				follow=True,
+			)
+
+		self.assertContains(
+			response,
+			"Vocalized 0 cards. Mishkal could not vocalize 1 Arabic answer.",
+		)
+		card.refresh_from_db()
+		self.assertEqual(card.answer_vocalized, "")
+
+	def test_bulk_vocalization_requires_login(self):
+		response = self.client.post(reverse("vocalize-missing-cards"))
+
+		self.assertRedirects(
+			response,
+			f"{reverse('login')}?next={reverse('vocalize-missing-cards')}",
+		)
+
 	def test_json_vocalization_is_paired_with_arabic_text_on_both_faces(self):
 		user = get_user_model().objects.create_user("arbitrary-arabic-owner")
 		self.client.force_login(user)
