@@ -20,7 +20,7 @@ class Card(models.Model):
     )
     answer =  models.CharField(max_length = 300)
     answer_vocalized = models.TextField(blank=True)
-    question = models.CharField(max_length=100)
+    question = models.CharField(max_length=500)
 
     box = models.IntegerField(
         choices=zip(BOXES, BOXES),

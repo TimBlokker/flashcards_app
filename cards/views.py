@@ -295,6 +295,9 @@ class CardPracticeView(LoginRequiredMixin, ListView):
         box_num = self.kwargs.get("box_num", "all")
         return f"card_practice_{self.request.user.pk}_{box_num}"
 
+    def get_flip_session_key(self):
+        return f"{self.get_session_key()}_flipped"
+
     def get_cards(self):
         cards = Card.objects.filter(user=self.request.user)
         if "box_num" in self.kwargs:
@@ -322,7 +325,12 @@ class CardPracticeView(LoginRequiredMixin, ListView):
             card_ids = list(self.get_cards().values_list("pk", flat=True))
             random.shuffle(card_ids)
             request.session[key] = card_ids
+            request.session[self.get_flip_session_key()] = False
             return redirect(request.path)
+        if "flip" in request.GET:
+            request.session[self.get_flip_session_key()] = (
+                request.GET.get("flip") == "1"
+            )
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -341,7 +349,10 @@ class CardPracticeView(LoginRequiredMixin, ListView):
         context["practice_only"] = True
         context["remaining_count"] = len(self.get_card_ids())
         context["total_cards"] = self.get_cards().count()
-        context["flipped"] = self.request.GET.get("flip") == "1"
+        context["flipped"] = self.request.session.get(
+            self.get_flip_session_key(),
+            False,
+        )
         context["learning_mode"] = True
         if "box_num" in self.kwargs:
             context["box_number"] = self.kwargs["box_num"]
