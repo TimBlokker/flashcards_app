@@ -13,6 +13,65 @@ bin/python manage.py runserver
 
 Run the tests with `bin/python manage.py test cards`.
 
+## Arabic audio
+
+Arabic answers have a **Listen** button in the card list and study views.
+
+### Setup
+
+`gTTS` is included in `requirements.txt`, so installing the dependencies is all
+that is required:
+
+```bash
+bin/pip install -r requirements.txt
+```
+
+No API key, migration, or `MEDIA_URL` configuration is needed. Django serves
+the audio through an authenticated view rather than exposing the cache folder
+as public media.
+
+By default, generated MP3s are stored in `media/arabic_audio/`. The folder is
+created automatically and is excluded from git. To use a different location,
+add this to `settings.py`:
+
+```python
+ARABIC_AUDIO_CACHE_DIR = "/var/lib/flashcards/arabic_audio"
+```
+
+The Django process needs outbound internet access for the first generation and
+write access to the cache directory.
+
+### How it works
+
+1. The **Listen** button requests `/audio/<card-id>/`.
+2. The endpoint requires login and checks that the card belongs to the current
+   user, so users cannot fetch another user's audio.
+3. It uses `answer_vocalized` when that contains Arabic; otherwise it uses
+   `answer`. Cards without an Arabic answer return `404`.
+4. The text is hashed with SHA-256. If
+   `media/arabic_audio/<sha256>.mp3` already exists, that file is served
+   immediately.
+5. On a cache miss, gTTS requests an MP3 from Google Translate's text-to-speech
+   service. The result is written atomically into the cache and then served.
+6. Browsers cache the response privately for 24 hours. The server-side cache
+   persists until its files are deleted; editing the Arabic text creates a new
+   cache entry.
+7. If Google/gTTS is unavailable, the endpoint returns `503` and the button
+   shows **Try again**.
+
+No Google Cloud API key is required. Audio generation is not local, so the
+first play needs internet access. Later plays use the cached MP3. If JavaScript
+is unavailable, the page falls back to the browser's native audio control.
+
+### Troubleshooting
+
+- The first play can take a few seconds while Google generates the audio.
+- A **Try again** button or a `503` response usually means the server could not
+  reach Google; check outbound network access and the Django logs.
+- To regenerate all audio, stop the app and delete `media/arabic_audio/`.
+- Make sure the user running Django can write to the cache directory.
+- Cached MP3s are not pruned automatically.
+
 ## Points, streaks and levels
 
 - A **correct answer** earns **5 points**, a wrong answer earns **1 point**.

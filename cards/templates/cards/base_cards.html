@@ -7,6 +7,7 @@
     <title>{% block title %}Flashcards{% endblock %}</title>
     {% load static cards_tags %}
     <link rel="stylesheet" href="{% static 'cards/css/app.css' %}">
+    <script src="{% static 'cards/js/arabic_audio.js' %}" defer></script>
 </head>
 <body{% if learning_mode %} class="learning-mode"{% endif %}>
     {% if not learning_mode %}

@@ -1,0 +1,10 @@
+{% load cards_tags %}
+{% if card.answer|has_arabic %}
+<div class="arabic-audio">
+    <audio class="arabic-audio-player" controls preload="none" src="{% url 'card-audio' card.pk %}"></audio>
+    <button type="button" class="arabic-audio-button" data-audio-button aria-label="Play pronunciation of the Arabic answer" hidden>
+        <span class="arabic-audio-icon" aria-hidden="true">▶</span>
+        <span class="arabic-audio-label">Listen</span>
+    </button>
+</div>
+{% endif %}

@@ -1,3 +1,4 @@
 Django==4.2.4
 openpyxl>=3.1,<4
 mishkal==0.4.1
+gTTS>=2.5,<3

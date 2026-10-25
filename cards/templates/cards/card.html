@@ -20,6 +20,7 @@
       {{ card.answer }}
     </p>
     {% endif %}
+    {% include "cards/arabic_audio.html" with card=card %}
     </div>
    <div class="card-actions">
     <a class="button button-secondary" href="{% url 'card-update' card.id %}">Edit card</a>
@@ -45,6 +46,7 @@
                         {% else %}
                             <h4 id="answer-{{ card.id }}">{{ card.answer }}</h4>
                         {% endif %}
+                        {% include "cards/arabic_audio.html" with card=card %}
                     {% else %}
                         <p class="card-side-label">QUESTION</p>
                         {% if card.question_vocalized %}
@@ -78,6 +80,7 @@
                         {% else %}
                             <h4 id="answer-{{ card.id }}">{{ card.answer }}</h4>
                         {% endif %}
+                        {% include "cards/arabic_audio.html" with card=card %}
                     {% endif %}
                 </section>
             </div>

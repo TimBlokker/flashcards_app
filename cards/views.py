@@ -5,7 +5,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from django.db import IntegrityError, transaction
 from django.db.models import OuterRef, Subquery
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.csrf import csrf_failure as default_csrf_failure
@@ -25,11 +25,11 @@ from .progress import (
     record_card_review,
     streak_message,
 )
+from .audio import ArabicAudioError, get_or_create_arabic_audio
 from .reminders import build_reminder_message
 from .whatsapp import whatsapp_deep_link
 import random
 from io import BytesIO
-from django.http import HttpResponse
 from .forms import (
     CardForm,
     CardImportForm,
@@ -112,6 +112,33 @@ class SignUpView(FormView):
                 Card.objects.filter(user__isnull=True).update(user=user)
         login(self.request, user)
         return super().form_valid(form)
+
+
+class CardAudioView(LoginRequiredMixin, View):
+    def get(self, request, pk, *args, **kwargs):
+        card = get_object_or_404(Card, pk=pk, user=request.user)
+        text = (card.answer_vocalized or "").strip()
+        if not contains_arabic(text):
+            text = (card.answer or "").strip()
+        if not contains_arabic(text):
+            raise Http404("This card has no Arabic answer.")
+
+        try:
+            audio_path = get_or_create_arabic_audio(text)
+        except ArabicAudioError:
+            return HttpResponse(
+                "Audio is unavailable right now. Please try again.",
+                status=503,
+                content_type="text/plain; charset=utf-8",
+            )
+
+        response = FileResponse(
+            audio_path.open("rb"),
+            content_type="audio/mpeg",
+        )
+        response["Cache-Control"] = "private, max-age=86400"
+        response["Content-Length"] = str(audio_path.stat().st_size)
+        return response
 
 
 class CardListView(LoginRequiredMixin, ListView):

@@ -1,5 +1,6 @@
 db.sqlite3
 settings.py
+media/
 __*
 00*
 !cards/management/__init__.py

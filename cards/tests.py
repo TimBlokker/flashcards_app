@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, connection, transaction
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.test import RequestFactory
 from django.template import Context, Template
 from django.template.loader import render_to_string
@@ -814,6 +814,128 @@ class AccountDeckTests(TestCase):
 		self.assertNotContains(response, 'name="category"')
 		with self.assertRaises(NoReverseMatch):
 			reverse("fiter-categories")
+
+
+class CardAudioTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(
+			"audio-owner",
+			password="Correct-Horse-92!",
+		)
+		self.card = Card.objects.create(
+			user=self.user,
+			question="Luck",
+			answer="حظ",
+			answer_vocalized="حَظّ",
+		)
+		self.client.force_login(self.user)
+
+	def test_card_list_shows_audio_only_for_arabic_answers(self):
+		non_arabic_card = Card.objects.create(
+			user=self.user,
+			question="Legacy question",
+			answer="legacy answer",
+		)
+
+		response = self.client.get(reverse("card-list"))
+
+		self.assertContains(
+			response,
+			reverse("card-audio", args=[self.card.pk]),
+		)
+		self.assertNotContains(
+			response,
+			reverse("card-audio", args=[non_arabic_card.pk]),
+		)
+		self.assertContains(response, "arabic-audio-button")
+		self.assertContains(response, "Listen")
+
+	def test_audio_view_generates_and_caches_the_vocalized_answer(self):
+		class FakeTTS:
+			calls = []
+
+			def __init__(self, text, lang, slow, timeout):
+				self.__class__.calls.append((text, lang, slow, timeout))
+
+			def save(self, path):
+				Path(path).write_bytes(b"fake-mp3")
+
+		with TemporaryDirectory() as temp_dir:
+			with override_settings(ARABIC_AUDIO_CACHE_DIR=temp_dir):
+				with patch("cards.audio.gTTS", FakeTTS):
+					response = self.client.get(
+						reverse("card-audio", args=[self.card.pk])
+					)
+					content = b"".join(response.streaming_content)
+
+					self.assertEqual(response.status_code, 200)
+					self.assertEqual(response["Content-Type"], "audio/mpeg")
+					self.assertEqual(
+						response["Cache-Control"],
+						"private, max-age=86400",
+					)
+					self.assertEqual(content, b"fake-mp3")
+
+					second_response = self.client.get(
+						reverse("card-audio", args=[self.card.pk])
+					)
+					b"".join(second_response.streaming_content)
+
+					self.assertEqual(len(FakeTTS.calls), 1)
+					self.assertEqual(FakeTTS.calls[0][0], "حَظّ")
+					self.assertEqual(FakeTTS.calls[0][1], "ar")
+					self.assertEqual(
+						len(list(Path(temp_dir).glob("*.mp3"))),
+						1,
+					)
+
+	def test_audio_view_rejects_another_users_card(self):
+		other_user = get_user_model().objects.create_user("audio-other")
+		other_card = Card.objects.create(
+			user=other_user,
+			question="Other",
+			answer="آخر",
+		)
+
+		response = self.client.get(
+			reverse("card-audio", args=[other_card.pk])
+		)
+
+		self.assertEqual(response.status_code, 404)
+
+	def test_audio_view_requires_login(self):
+		self.client.logout()
+
+		response = self.client.get(
+			reverse("card-audio", args=[self.card.pk])
+		)
+
+		self.assertRedirects(
+			response,
+			f"{reverse('login')}?next={reverse('card-audio', args=[self.card.pk])}",
+		)
+
+	def test_audio_view_returns_503_when_tts_fails(self):
+		class BrokenTTS:
+			def __init__(self, *args, **kwargs):
+				pass
+
+			def save(self, path):
+				raise OSError("tts is down")
+
+		with TemporaryDirectory() as temp_dir:
+			with override_settings(ARABIC_AUDIO_CACHE_DIR=temp_dir):
+				with patch("cards.audio.gTTS", BrokenTTS):
+					with self.assertLogs("cards.audio", level="ERROR"):
+						response = self.client.get(
+							reverse("card-audio", args=[self.card.pk])
+						)
+
+		self.assertEqual(response.status_code, 503)
+		self.assertEqual(
+			response.content,
+			b"Audio is unavailable right now. Please try again.",
+		)
 
 
 class CardImportTests(TestCase):

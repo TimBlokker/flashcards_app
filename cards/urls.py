@@ -47,6 +47,11 @@ urlpatterns = [
          views.StudyProgressView.as_view(),
          name="progress",
      ),
+     path(
+         "audio/<int:pk>/",
+         views.CardAudioView.as_view(),
+         name="card-audio",
+     ),
     path(
         "edit/<int:pk>",
         views.CardUpdateView.as_view(),

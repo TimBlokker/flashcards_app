@@ -1,8 +1,14 @@
 from django import template
+from cards.arabic import contains_arabic
 from cards.models import BOXES, Card
 from cards.progress import progress_summary
 
 register = template.Library()
+
+
+@register.filter
+def has_arabic(value):
+    return contains_arabic(value)
 
 
 def _get_navigation_data(request):
