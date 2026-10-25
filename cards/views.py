@@ -26,6 +26,7 @@ from .forms import (
     CardImportForm,
 )
 from .forms import CardCheckForm
+from .arabic import contains_arabic, vocalize_arabic
 
 
 def csrf_failure(request, reason=""):
@@ -39,15 +40,8 @@ def with_card_vocalizations(cards):
     ).exclude(
         vocalized_translation="",
     ).order_by("pk").values("vocalized_translation")[:1]
-    answer_vocalization = DictionaryEntry.objects.filter(
-        language_pair="en-ar",
-        translation=OuterRef("answer"),
-    ).exclude(
-        vocalized_translation="",
-    ).order_by("pk").values("vocalized_translation")[:1]
     cards_with_dictionary_vocalizations = cards.annotate(
         question_vocalized=Subquery(question_vocalization),
-        answer_dictionary_vocalized=Subquery(answer_vocalization),
     )
     return cards_with_dictionary_vocalizations
 
@@ -94,6 +88,56 @@ class CardListView(LoginRequiredMixin, ListView):
                 user=self.request.user,
             ).order_by("box", "-date_created")
         )
+
+
+class CardVocalizeMissingView(LoginRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        cards = Card.objects.filter(
+            user=request.user,
+            answer_vocalized="",
+        ).only("pk", "answer")
+        vocalized_count = 0
+        non_arabic_count = 0
+        failure_count = 0
+
+        for card in cards.iterator():
+            if not contains_arabic(card.answer):
+                non_arabic_count += 1
+                continue
+
+            vocalized_answer = vocalize_arabic(card.answer)
+            if not vocalized_answer:
+                failure_count += 1
+                continue
+
+            vocalized_count += Card.objects.filter(
+                pk=card.pk,
+                user=request.user,
+                answer_vocalized="",
+            ).update(answer_vocalized=vocalized_answer)
+
+        if vocalized_count or non_arabic_count or failure_count:
+            card_label = "card" if vocalized_count == 1 else "cards"
+            message = f"Vocalized {vocalized_count} {card_label}."
+            if non_arabic_count:
+                answer_label = "answer" if non_arabic_count == 1 else "answers"
+                message += (
+                    f" Skipped {non_arabic_count} {answer_label} "
+                    "without Arabic text."
+                )
+            if failure_count:
+                answer_label = "answer" if failure_count == 1 else "answers"
+                message += (
+                    f" Mishkal could not vocalize {failure_count} Arabic "
+                    f"{answer_label}."
+                )
+                messages.warning(request, message)
+            else:
+                messages.success(request, message)
+        else:
+            messages.success(request, "No cards are missing a vocalized answer.")
+
+        return redirect("card-list")
 
 
 class CardCreateView(LoginRequiredMixin, CreateView):

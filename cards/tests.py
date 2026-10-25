@@ -5,6 +5,7 @@ from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.contrib.auth import get_user_model
@@ -970,7 +971,91 @@ class CardImportTests(TestCase):
 
 
 class ArabicVocalizationTests(TestCase):
-	def test_json_vocalization_is_paired_with_arabic_text_on_both_faces(self):
+	def test_bulk_vocalization_only_fills_blank_answers_for_current_user(self):
+		user = get_user_model().objects.create_user("bulk-vocalization-owner")
+		other_user = get_user_model().objects.create_user("bulk-vocalization-other")
+		missing_card = Card.objects.create(
+			user=user,
+			question="Arabic answer",
+			answer="هي تحب ان تذهب",
+		)
+		existing_card = Card.objects.create(
+			user=user,
+			question="Already vocalized",
+			answer="صباح الخير",
+			answer_vocalized="صَبَاحُ الْخَيْرِ",
+		)
+		non_arabic_card = Card.objects.create(
+			user=user,
+			question="English answer",
+			answer="Good morning",
+		)
+		other_users_card = Card.objects.create(
+			user=other_user,
+			question="Other user's answer",
+			answer="صباح الخير",
+		)
+		self.client.force_login(user)
+
+		with patch(
+			"cards.views.vocalize_arabic",
+			return_value="هِيَ تُحِبُّ أَنْ تَذْهَبَ",
+		) as vocalize:
+			response = self.client.post(
+				reverse("vocalize-missing-cards"),
+				follow=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "Vocalize missing answers")
+		self.assertContains(
+			response,
+			"Vocalized 1 card. Skipped 1 answer without Arabic text.",
+		)
+		vocalize.assert_called_once_with("هي تحب ان تذهب")
+		missing_card.refresh_from_db()
+		existing_card.refresh_from_db()
+		non_arabic_card.refresh_from_db()
+		other_users_card.refresh_from_db()
+		self.assertEqual(
+			missing_card.answer_vocalized,
+			"هِيَ تُحِبُّ أَنْ تَذْهَبَ",
+		)
+		self.assertEqual(existing_card.answer_vocalized, "صَبَاحُ الْخَيْرِ")
+		self.assertEqual(non_arabic_card.answer_vocalized, "")
+		self.assertEqual(other_users_card.answer_vocalized, "")
+
+	def test_bulk_vocalization_reports_mishkal_failures(self):
+		user = get_user_model().objects.create_user("bulk-vocalization-failure")
+		card = Card.objects.create(
+			user=user,
+			question="Arabic answer",
+			answer="هي تحب ان تذهب",
+		)
+		self.client.force_login(user)
+
+		with patch("cards.views.vocalize_arabic", return_value=""):
+			response = self.client.post(
+				reverse("vocalize-missing-cards"),
+				follow=True,
+			)
+
+		self.assertContains(
+			response,
+			"Vocalized 0 cards. Mishkal could not vocalize 1 Arabic answer.",
+		)
+		card.refresh_from_db()
+		self.assertEqual(card.answer_vocalized, "")
+
+	def test_bulk_vocalization_requires_login(self):
+		response = self.client.post(reverse("vocalize-missing-cards"))
+
+		self.assertRedirects(
+			response,
+			f"{reverse('login')}?next={reverse('vocalize-missing-cards')}",
+		)
+
+	def test_dictionary_question_vocalization_is_shown_but_blank_answer_is_not(self):
 		user = get_user_model().objects.create_user("arbitrary-arabic-owner")
 		self.client.force_login(user)
 		question = "لماذا لا تأتي إلى البيت"
@@ -1003,29 +1088,21 @@ class ArabicVocalizationTests(TestCase):
 				arabic_display_texts(response, f"question-{card.id}"),
 				[f"{question} {question_vocalized}"],
 			)
-			self.assertEqual(
-				arabic_display_texts(response, f"answer-{card.id}"),
-				[f"{answer} {answer_vocalized}"],
-			)
+			self.assertEqual(arabic_display_texts(response, f"answer-{card.id}"), [])
+			self.assertContains(response, answer)
+			self.assertNotContains(response, answer_vocalized)
 
-	def test_all_cards_practice_shows_dictionary_vocalization(self):
+	def test_all_cards_practice_shows_dictionary_question_vocalization_only(self):
 		user = get_user_model().objects.create_user("all-cards-vocalization-owner")
 		self.client.force_login(user)
 		question = "لفظة تقرأ طردا وعكسا"
 		vocalized_question = "لَفْظَةٌ تَقْرَأُ طَرْدَا وَعَكْسَا"
 		answer = "ألفاظ تقرأ طردا وعكسا"
-		vocalized_answer = "أَلْفَاظُ تَقْرَأُ طَرْدَا وَعَكْسَا"
 		DictionaryEntry.objects.create(
 			language_pair="en-ar",
 			headword="Palindrome",
 			translation=question,
 			vocalized_translation=vocalized_question,
-		)
-		DictionaryEntry.objects.create(
-			language_pair="en-ar",
-			headword="Palindromes",
-			translation=answer,
-			vocalized_translation=vocalized_answer,
 		)
 		card = Card.objects.create(
 			user=user,
@@ -1045,10 +1122,8 @@ class ArabicVocalizationTests(TestCase):
 			arabic_display_texts(response, f"question-{card.pk}"),
 			[f"{question} {vocalized_question}"],
 		)
-		self.assertEqual(
-			arabic_display_texts(response, f"answer-{card.pk}"),
-			[f"{answer} {vocalized_answer}"],
-		)
+		self.assertEqual(arabic_display_texts(response, f"answer-{card.pk}"), [])
+		self.assertContains(response, answer)
 
 	def test_manually_entered_vocalization_is_saved_with_arabic_answer(self):
 		answer = "هي تحب ان تذهب"
@@ -1064,6 +1139,41 @@ class ArabicVocalizationTests(TestCase):
 		card = form.save()
 
 		self.assertEqual(card.answer_vocalized, vocalized_answer)
+
+	def test_clearing_vocalization_removes_dictionary_fallback(self):
+		user = get_user_model().objects.create_user("clear-vocalization-owner")
+		self.client.force_login(user)
+		answer = "صباح الخير"
+		vocalized_answer = "صَبَاحُ الْخَيْرِ"
+		DictionaryEntry.objects.create(
+			language_pair="en-ar",
+			headword="Good morning",
+			translation=answer,
+			vocalized_translation=vocalized_answer,
+		)
+		card = Card.objects.create(
+			user=user,
+			question="Good morning",
+			answer=answer,
+			answer_vocalized=vocalized_answer,
+		)
+
+		response = self.client.post(
+			reverse("card-update", args=[card.pk]),
+			{
+				"question": card.question,
+				"answer": card.answer,
+				"answer_vocalized": "",
+				"box": card.box,
+			},
+		)
+
+		self.assertRedirects(response, reverse("card-list"))
+		card.refresh_from_db()
+		self.assertEqual(card.answer_vocalized, "")
+		list_response = self.client.get(reverse("card-list"))
+		self.assertContains(list_response, answer)
+		self.assertNotContains(list_response, vocalized_answer)
 
 	def test_repeat_card_shows_vocalized_question_before_revealing_answer(self):
 		user = get_user_model().objects.create_user("arabic-question-owner")
@@ -1149,7 +1259,7 @@ class ArabicVocalizationTests(TestCase):
 		self.assertIn("مريض", flipped_back)
 		self.assertIn("مَرِيضٌ", flipped_back)
 
-	def test_arabic_answer_vocalization_is_shown_on_both_repeat_sides(self):
+	def test_blank_arabic_answer_is_not_given_dictionary_vocalization_on_repeat(self):
 		user = get_user_model().objects.create_user("arabic-answer-owner")
 		self.client.force_login(user)
 		DictionaryEntry.objects.create(
@@ -1168,25 +1278,25 @@ class ArabicVocalizationTests(TestCase):
 
 		default_response = self.client.get(reverse("todo-list"))
 		default_rendered = default_response.content.decode()
-		self.assertContains(default_response, "مَرِيضٌ")
+		self.assertNotContains(default_response, "مَرِيضٌ")
 		default_back = default_rendered.split(
 			'class="flip-face flip-back"',
 			1,
 		)[1].split("</section>", 1)[0]
 		self.assertIn('class="card-side-label">ANSWER', default_back)
 		self.assertIn("مريض", default_back)
-		self.assertIn("مَرِيضٌ", default_back)
+		self.assertNotIn("مَرِيضٌ", default_back)
 
 		flipped_response = self.client.get(reverse("todo-list"), {"flip": "1"})
 		flipped_rendered = flipped_response.content.decode()
-		self.assertContains(flipped_response, "مَرِيضٌ")
+		self.assertNotContains(flipped_response, "مَرِيضٌ")
 		flipped_front = flipped_rendered.split(
 			'class="flip-face flip-front"',
 			1,
 		)[1].split('class="flip-face flip-back"', 1)[0]
 		self.assertIn('class="card-side-label">QUESTION', flipped_front)
 		self.assertIn("مريض", flipped_front)
-		self.assertIn("مَرِيضٌ", flipped_front)
+		self.assertNotIn("مَرِيضٌ", flipped_front)
 
 	def test_non_arabic_answers_are_not_vocalized(self):
 		form = CardForm(data={
@@ -1215,8 +1325,6 @@ class ArabicVocalizationTests(TestCase):
 		})
 		self.assertTrue(form.is_valid())
 		card = form.save()
-		card.answer_dictionary_vocalized = entry.vocalized_translation
-
 		rendered = render_to_string("cards/card.html", {
 			"card": card,
 			"check_card": False,

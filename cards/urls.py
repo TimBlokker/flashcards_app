@@ -23,6 +23,11 @@ urlpatterns = [
         name="card-list"
     ),
      path(
+         "vocalize-missing/",
+         views.CardVocalizeMissingView.as_view(),
+         name="vocalize-missing-cards",
+     ),
+     path(
         "new",
         views.CardCreateView.as_view(),
         name="card-create"

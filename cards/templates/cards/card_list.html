@@ -7,7 +7,13 @@
             <h1>My cards</h1>
             <p class="page-intro">Keep your momentum going, one small step at a time.</p>
         </div>
-        <div>
+        <div class="page-heading-actions">
+            <form method="post" action="{% url 'vocalize-missing-cards' %}">
+                {% csrf_token %}
+                <button class="button button-secondary" type="submit">
+                    Vocalize missing answers
+                </button>
+            </form>
             <a class="button button-secondary" href="{% url 'practice-all-cards' %}?start=1">Practice all cards</a>
             <a class="button button-primary" href="{% url 'card-create' %}">＋ Create a card</a>
         </div>
