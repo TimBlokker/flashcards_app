@@ -10,10 +10,10 @@
     {% else %}
     <h4 class="{% if card.question|length > 250 %}card-text-very-long{% elif card.question|length > 120 %}card-text-long{% endif %}">{{ card.question }}</h4>
     {% endif %}
-    {% if card.answer_vocalized or card.answer_dictionary_vocalized %}
+    {% if card.answer_vocalized %}
     <span class="arabic-display card-answer" lang="ar" dir="rtl">
       <span class="arabic-text">{{ card.answer }}</span>
-      <span class="vocalized-answer">{{ card.answer_vocalized|default:card.answer_dictionary_vocalized }}</span>
+      <span class="vocalized-answer">{{ card.answer_vocalized }}</span>
     </span>
     {% else %}
     <p class="card-answer">
@@ -37,10 +37,10 @@
                 <section class="flip-face flip-front" aria-labelledby="{% if flipped %}answer{% else %}question{% endif %}-{{ card.id }}">
                     {% if flipped %}
                         <p class="card-side-label">QUESTION</p>
-                        {% if card.answer_vocalized or card.answer_dictionary_vocalized %}
+                        {% if card.answer_vocalized %}
                             <span id="answer-{{ card.id }}" class="arabic-display" lang="ar" dir="rtl">
                                 <span class="arabic-text">{{ card.answer }}</span>
-                                <span class="vocalized-answer">{{ card.answer_vocalized|default:card.answer_dictionary_vocalized }}</span>
+                                <span class="vocalized-answer">{{ card.answer_vocalized }}</span>
                             </span>
                         {% else %}
                             <h4 id="answer-{{ card.id }}">{{ card.answer }}</h4>
@@ -70,10 +70,10 @@
                         {% endif %}
                     {% else %}
                         <p class="card-side-label">ANSWER</p>
-                        {% if card.answer_vocalized or card.answer_dictionary_vocalized %}
+                        {% if card.answer_vocalized %}
                             <span id="answer-{{ card.id }}" class="arabic-display" lang="ar" dir="rtl">
                                 <span class="arabic-text">{{ card.answer }}</span>
-                                <span class="vocalized-answer">{{ card.answer_vocalized|default:card.answer_dictionary_vocalized }}</span>
+                                <span class="vocalized-answer">{{ card.answer_vocalized }}</span>
                             </span>
                         {% else %}
                             <h4 id="answer-{{ card.id }}">{{ card.answer }}</h4>

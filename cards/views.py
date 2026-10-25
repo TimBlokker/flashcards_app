@@ -40,15 +40,8 @@ def with_card_vocalizations(cards):
     ).exclude(
         vocalized_translation="",
     ).order_by("pk").values("vocalized_translation")[:1]
-    answer_vocalization = DictionaryEntry.objects.filter(
-        language_pair="en-ar",
-        translation=OuterRef("answer"),
-    ).exclude(
-        vocalized_translation="",
-    ).order_by("pk").values("vocalized_translation")[:1]
     cards_with_dictionary_vocalizations = cards.annotate(
         question_vocalized=Subquery(question_vocalization),
-        answer_dictionary_vocalized=Subquery(answer_vocalization),
     )
     return cards_with_dictionary_vocalizations
 
