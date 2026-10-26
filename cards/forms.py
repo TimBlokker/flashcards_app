@@ -50,6 +50,15 @@ class AccountEmailForm(forms.ModelForm):
         duplicates = get_user_model().objects.filter(email__iexact=email)
         if self.instance.pk:
             duplicates = duplicates.exclude(pk=self.instance.pk)
+        # Staff accounts may share an address with a regular account. This
+        # allows an administrator to keep the same email as their personal
+        # account while still preventing two regular accounts from colliding.
+        if self.instance.is_staff or self.instance.is_superuser:
+            duplicates = duplicates.none()
+        else:
+            duplicates = duplicates.exclude(
+                Q(is_staff=True) | Q(is_superuser=True)
+            )
         if duplicates.exists():
             raise ValidationError("An account with this email already exists.")
         return email

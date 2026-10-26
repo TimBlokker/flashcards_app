@@ -2587,6 +2587,49 @@ class AuthenticationFeatureTests(TestCase):
 		user.refresh_from_db()
 		self.assertEqual(user.email, "mine@example.com")
 
+	def test_regular_account_can_share_a_staff_email(self):
+		self.create_user(
+			"admin-user",
+			email="shared@example.com",
+			is_staff=True,
+		)
+		user = self.create_user(
+			"regular-user",
+			email="mine@example.com",
+		)
+		self.client.force_login(user)
+
+		response = self.client.post(
+			reverse("account-settings"),
+			{"email": "Shared@Example.com"},
+		)
+
+		self.assertRedirects(response, reverse("account-settings"))
+		user.refresh_from_db()
+		self.assertEqual(user.email, "shared@example.com")
+		self.assertEqual(len(mail.outbox), 1)
+
+	def test_staff_account_can_share_a_regular_users_email(self):
+		self.create_user(
+			"regular-user",
+			email="shared@example.com",
+		)
+		admin = self.create_user(
+			"admin-user",
+			email="admin@example.com",
+			is_staff=True,
+		)
+		self.client.force_login(admin)
+
+		response = self.client.post(
+			reverse("account-settings"),
+			{"email": "shared@example.com"},
+		)
+
+		self.assertRedirects(response, reverse("account-settings"))
+		admin.refresh_from_db()
+		self.assertEqual(admin.email, "shared@example.com")
+
 	def test_existing_account_without_email_is_forced_to_add_one(self):
 		user = self.create_user("no-email-user")
 
@@ -2741,7 +2784,7 @@ class AuthenticationFeatureTests(TestCase):
 		self.assertEqual(mail.outbox[0].to, ["reset@example.com"])
 		self.assertEqual(
 			mail.outbox[0].subject,
-			"Reset your Flashcards password",
+			"Reset your Flashcards password (reset-user)",
 		)
 
 		match = re.search(
@@ -2764,6 +2807,42 @@ class AuthenticationFeatureTests(TestCase):
 		self.assertRedirects(response, reverse("password_reset_complete"))
 		user.refresh_from_db()
 		self.assertTrue(user.check_password(new_password))
+
+	@override_settings(
+		EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+	)
+	def test_password_reset_emails_each_account_sharing_an_address(self):
+		shared_email = "shared@example.com"
+		regular = self.create_user(
+			"regular-reset-user",
+			email=shared_email,
+		)
+		admin = self.create_user(
+			"admin-reset-user",
+			email=shared_email,
+			is_staff=True,
+		)
+		self.verify_email(regular)
+		self.verify_email(admin)
+
+		response = self.client.post(
+			reverse("password_reset"),
+			{"email": shared_email},
+		)
+
+		self.assertRedirects(response, reverse("password_reset_done"))
+		self.assertEqual(len(mail.outbox), 2)
+		self.assertEqual(
+			{message.subject for message in mail.outbox},
+			{
+				"Reset your Flashcards password (regular-reset-user)",
+				"Reset your Flashcards password (admin-reset-user)",
+			},
+		)
+		self.assertEqual(
+			{message.to[0] for message in mail.outbox},
+			{shared_email},
+		)
 
 	@override_settings(
 		EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",

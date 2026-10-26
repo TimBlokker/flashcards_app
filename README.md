@@ -55,6 +55,10 @@ page on their next authenticated request. Users can change their address under
 - Users who have not saved and verified an email address cannot request a reset
   themselves. They can add or resend verification after logging in, or an
   administrator can set it in Django admin.
+- A staff or superuser account may share an email address with a regular
+  account. Reset emails are sent separately for each verified account, with the
+  username in the subject, so the right account can be chosen. Two regular
+  accounts still cannot share an address.
 
 ### Automatic logout
 
