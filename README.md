@@ -13,6 +13,49 @@ bin/python manage.py runserver
 
 Run the tests with `bin/python manage.py test cards`.
 
+## Accounts, password reset and session security
+
+Every account has an email address, required at signup, used for password
+recovery. Existing accounts can add or change theirs under **Account settings**
+in the account menu. While an account has no email, a reminder banner appears in
+the app.
+
+### Password reset
+
+- **Forgot your password?** on the login page sends a one-hour reset link.
+- In development the email is printed to the terminal by default (Django's
+  console backend). To send real email, set these environment variables:
+
+  ```bash
+  export DJANGO_EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"
+  export EMAIL_HOST="smtp.example.com"
+  export EMAIL_PORT="587"
+  export EMAIL_HOST_USER="..."
+  export EMAIL_HOST_PASSWORD="..."
+  export EMAIL_USE_TLS="1"
+  export DEFAULT_FROM_EMAIL="Flashcards <noreply@example.com>"
+  ```
+
+  Use `EMAIL_USE_SSL=1` instead of `EMAIL_USE_TLS` for an implicit TLS
+  connection; do not enable both. Reset links expire after one hour
+  (`PASSWORD_RESET_TIMEOUT`).
+- Users who have not saved an email address cannot request a reset themselves.
+  They can add one after logging in, or an administrator can set it in Django
+  admin.
+
+### Automatic logout
+
+- After **5 minutes without activity**, the page logs out automatically and the
+  login page explains why. Activity in any open tab keeps the session alive.
+- Tabs coordinate with each other: opening a second tab or reloading keeps you
+  logged in, while closing the final tab ends the session. Reopening after all
+  tabs are closed requires logging in again.
+- Session cookies are browser-session cookies, so closing the browser also ends
+  the session.
+- The server also enforces the idle limit. The timeout can be changed with
+  `SESSION_IDLE_TIMEOUT` in `flashcards/settings.py`; the tab login handshake
+  window is `TAB_SESSION_HANDSHAKE_TIMEOUT`.
+
 ## Arabic audio
 
 Arabic answers have a **Listen** button in the card list and study views.

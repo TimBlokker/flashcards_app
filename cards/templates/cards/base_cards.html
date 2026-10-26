@@ -8,8 +8,111 @@
     {% load static cards_tags %}
     <link rel="stylesheet" href="{% static 'cards/css/app.css' %}">
     <script src="{% static 'cards/js/arabic_audio.js' %}" defer></script>
+    <script src="{% static 'cards/js/password_toggle.js' %}" defer></script>
+    <script src="{% static 'cards/js/login_csrf.js' %}" defer></script>
+    {% if user.is_authenticated %}
+        <script src="{% static 'cards/js/session_security.js' %}" defer></script>
+    {% endif %}
 </head>
 <body{% if learning_mode %} class="learning-mode"{% endif %}>
+    {% if user.is_authenticated %}
+        <form id="tab-session-expired-form" method="post" action="{% url 'tab-session-expired' %}" hidden>
+            {% csrf_token %}
+        </form>
+        <form id="idle-logout-form" method="post" action="{% url 'idle-logout' %}" data-idle-timeout="{{ idle_timeout_seconds }}" data-heartbeat-url="{% url 'session-heartbeat' %}" data-login-url="{% url 'login' %}" hidden>
+            {% csrf_token %}
+        </form>
+        <form id="tab-session-start-form" method="post" action="{% url 'tab-session-start' %}" hidden>
+            {% csrf_token %}
+        </form>
+        <script>
+        (() => {
+            const STORAGE_KEY = "flashcards.tab";
+            const CHANNEL_NAME = "flashcards-tabs";
+            const expiredForm = document.getElementById("tab-session-expired-form");
+            const startForm = document.getElementById("tab-session-start-form");
+            const csrfInput = document.querySelector("#tab-session-expired-form input[name='csrfmiddlewaretoken']");
+            const handshake = {% if tab_session_handshake %}true{% else %}false{% endif %};
+            let marker = null;
+
+            try {
+                marker = sessionStorage.getItem(STORAGE_KEY);
+            } catch (error) {
+                return;
+            }
+
+            const clearHandshake = () => {
+                if (!handshake || !startForm || !csrfInput) return;
+                fetch(startForm.action, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": csrfInput.value },
+                    credentials: "same-origin",
+                }).catch(() => {
+                    // The handshake expires on its own if this request fails.
+                });
+            };
+
+            const supported = "BroadcastChannel" in window;
+            const keepChannelAlive = (channel) => {
+                window.flashcardsTabChannel = channel;
+                channel.addEventListener("message", (event) => {
+                    if (event.data === "tab-ping") {
+                        channel.postMessage("tab-alive");
+                    }
+                });
+            };
+
+            if (marker) {
+                clearHandshake();
+                if (supported) keepChannelAlive(new BroadcastChannel(CHANNEL_NAME));
+                return;
+            }
+
+            if (handshake || !supported) {
+                try {
+                    sessionStorage.setItem(STORAGE_KEY, "active");
+                } catch (error) {
+                    // Storage can be unavailable in private browsing.
+                }
+                clearHandshake();
+                if (supported) keepChannelAlive(new BroadcastChannel(CHANNEL_NAME));
+                return;
+            }
+
+            document.documentElement.classList.add("tab-session-check");
+            const channel = new BroadcastChannel(CHANNEL_NAME);
+            let settled = false;
+
+            const adopt = () => {
+                if (settled) return;
+                settled = true;
+                try {
+                    sessionStorage.setItem(STORAGE_KEY, "active");
+                } catch (error) {
+                    // Storage can be unavailable in private browsing.
+                }
+                clearHandshake();
+                document.documentElement.classList.remove("tab-session-check");
+                keepChannelAlive(channel);
+            };
+
+            const expire = () => {
+                if (settled) return;
+                settled = true;
+                channel.close();
+                if (expiredForm) {
+                    expiredForm.submit();
+                }
+            };
+
+            channel.addEventListener("message", (event) => {
+                if (event.data === "tab-alive") adopt();
+            });
+            channel.postMessage("tab-ping");
+            window.setTimeout(expire, 400);
+        })();
+        </script>
+    {% endif %}
     {% if not learning_mode %}
         <header class="site-header">
             <div class="header-inner">
@@ -22,6 +125,12 @@
             {% study_stats "mobile" %}
         </header>
         {% include "cards/mobile_navigation.html" %}
+    {% endif %}
+    {% if user.is_authenticated and not user.email and not learning_mode %}
+        <div class="account-nudge" role="status">
+            <span>Add an email address so you can reset your password if you forget it.</span>
+            <a href="{% url 'account-settings' %}">Add email</a>
+        </div>
     {% endif %}
     <main class="page-shell{% if learning_mode %} learning-shell{% endif %}">
         {% if messages %}

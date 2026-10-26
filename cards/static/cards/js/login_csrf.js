@@ -11,6 +11,20 @@
         if (cookie) tokenInput.value = cookie.slice("csrftoken=".length);
     };
 
+    const markTabActive = () => {
+        if (!form.querySelector("input[type='password']")) return;
+        try {
+            if (!sessionStorage.getItem("flashcards.tab")) {
+                sessionStorage.setItem("flashcards.tab", "active");
+            }
+        } catch (error) {
+            // Storage can be unavailable in private browsing.
+        }
+    };
+
     window.addEventListener("pageshow", refreshToken);
-    form.addEventListener("submit", refreshToken);
+    form.addEventListener("submit", () => {
+        refreshToken();
+        markTabActive();
+    });
 })();

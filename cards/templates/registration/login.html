@@ -1,19 +1,23 @@
 {% extends "cards/base_cards.html" %}
-{% load static %}
 {% block content %}
     <div class="auth-wrap">
         <section class="auth-panel">
             <p class="eyebrow">WELCOME BACK</p>
             <h1>Log in</h1>
             <p class="auth-intro">Pick up right where you left off.</p>
+            {% if request.GET.reason == "idle" %}
+                <p class="auth-notice" role="status">You were logged out after 5 minutes of inactivity.</p>
+            {% elif request.GET.reason == "expired" %}
+                <p class="auth-notice" role="status">Your session ended because the tab was closed. Log in again to continue.</p>
+            {% endif %}
             <form method="post">
                 {% csrf_token %}
                 {{ form.as_p }}
                 <input type="hidden" name="next" value="{{ next }}">
                 <button type="submit">Log in</button>
             </form>
+            <p class="auth-forgot"><a href="{% url 'password_reset' %}">Forgot your password?</a></p>
             <p class="auth-switch">New here? <a href="{% url 'signup' %}">Create an account</a>.</p>
         </section>
     </div>
-    <script src="{% static 'cards/js/login_csrf.js' %}" defer></script>
 {% endblock %}

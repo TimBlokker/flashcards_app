@@ -1,6 +1,5 @@
 from django.conf import settings
-from django.contrib.auth import login
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from django.db import IntegrityError, transaction
@@ -31,8 +30,10 @@ from .whatsapp import whatsapp_deep_link
 import random
 from io import BytesIO
 from .forms import (
+    AccountEmailForm,
     CardForm,
     CardImportForm,
+    SignUpForm,
     StudyReminderForm,
 )
 from .forms import CardCheckForm
@@ -102,7 +103,7 @@ def dictionary_suggestions(request):
 
 class SignUpView(FormView):
     template_name = "registration/signup.html"
-    form_class = UserCreationForm
+    form_class = SignUpForm
     success_url = reverse_lazy("home")
 
     def form_valid(self, form):
@@ -112,6 +113,47 @@ class SignUpView(FormView):
                 Card.objects.filter(user__isnull=True).update(user=user)
         login(self.request, user)
         return super().form_valid(form)
+
+
+class AccountSettingsView(LoginRequiredMixin, FormView):
+    template_name = "registration/account_settings.html"
+    form_class = AccountEmailForm
+    success_url = reverse_lazy("account-settings")
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        form.save()
+        messages.success(self.request, "Your email address has been updated.")
+        return super().form_valid(form)
+
+
+class IdleLogoutView(View):
+    def post(self, request, *args, **kwargs):
+        logout(request)
+        return redirect(f"{reverse('login')}?reason=idle")
+
+
+class TabSessionExpiredView(View):
+    def post(self, request, *args, **kwargs):
+        logout(request)
+        return redirect(f"{reverse('login')}?reason=expired")
+
+
+class SessionHeartbeatView(View):
+    def post(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return HttpResponse(status=401)
+        return HttpResponse(status=204)
+
+
+class TabSessionStartView(View):
+    def post(self, request, *args, **kwargs):
+        request.session.pop("tab_session_handshake", None)
+        return HttpResponse(status=204)
 
 
 class CardAudioView(LoginRequiredMixin, View):

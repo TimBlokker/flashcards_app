@@ -1,4 +1,6 @@
 import json
+import re
+import time
 from html.parser import HTMLParser
 from io import BytesIO
 from datetime import timedelta
@@ -7,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from django.core import mail
 from django.core.management import call_command
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, connection, transaction
@@ -231,6 +234,7 @@ class AccountDeckTests(TestCase):
 			reverse("signup"),
 			{
 				"username": "new-user",
+				"email": "new-user@example.com",
 				"password1": "Correct-Horse-92!",
 				"password2": "Correct-Horse-92!",
 			},
@@ -269,6 +273,7 @@ class AccountDeckTests(TestCase):
 			reverse("signup"),
 			{
 				"username": "new-user",
+				"email": "short-password@example.com",
 				"password1": "short",
 				"password2": "short",
 			},
@@ -382,6 +387,7 @@ class AccountDeckTests(TestCase):
 			reverse("signup"),
 			{
 				"username": "legacyUser",
+				"email": "legacy-user@example.com",
 				"password1": "Correct-Horse-92!",
 				"password2": "Correct-Horse-92!",
 			},
@@ -400,6 +406,7 @@ class AccountDeckTests(TestCase):
 			reverse("signup"),
 			{
 				"username": "legacyUser",
+				"email": "legacy-user@example.com",
 				"password1": "Correct-Horse-92!",
 				"password2": "Correct-Horse-92!",
 			},
@@ -411,6 +418,7 @@ class AccountDeckTests(TestCase):
 			reverse("signup"),
 			{
 				"username": "anotherUser",
+				"email": "another-user@example.com",
 				"password1": "A-Different-Password-75!",
 				"password2": "A-Different-Password-75!",
 			},
@@ -2448,3 +2456,254 @@ class SendStudyRemindersTests(TestCase):
 		self.reminder.refresh_from_db()
 		self.assertEqual(self.reminder.last_sent_on, timezone.localdate())
 		self.assertIsNone(StudyReminder.objects.get(user=other).last_sent_on)
+
+
+class AuthenticationFeatureTests(TestCase):
+	password = "Correct-Horse-92!"
+
+	def create_user(self, username, **kwargs):
+		kwargs.setdefault("password", self.password)
+		return get_user_model().objects.create_user(username, **kwargs)
+
+	def test_signup_requires_an_email_address(self):
+		response = self.client.post(
+			reverse("signup"),
+			{
+				"username": "new-user",
+				"password1": self.password,
+				"password2": self.password,
+			},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "This field is required.")
+		self.assertFalse(
+			get_user_model().objects.filter(username="new-user").exists()
+		)
+
+	def test_signup_stores_a_normalized_email_address(self):
+		response = self.client.post(
+			reverse("signup"),
+			{
+				"username": "new-user",
+				"email": "New.User@Example.COM",
+				"password1": self.password,
+				"password2": self.password,
+			},
+		)
+
+		self.assertRedirects(response, reverse("home"))
+		user = get_user_model().objects.get(username="new-user")
+		self.assertEqual(user.email, "new.user@example.com")
+		self.assertIn("_auth_user_id", self.client.session)
+
+	def test_signup_rejects_a_duplicate_email_case_insensitively(self):
+		self.create_user("existing-user", email="taken@example.com")
+
+		response = self.client.post(
+			reverse("signup"),
+			{
+				"username": "new-user",
+				"email": "TAKEN@example.com",
+				"password1": self.password,
+				"password2": self.password,
+			},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(
+			response,
+			"An account with this email already exists.",
+		)
+		self.assertFalse(
+			get_user_model().objects.filter(username="new-user").exists()
+		)
+
+	def test_account_settings_updates_the_email_address(self):
+		user = self.create_user("settings-user")
+		self.client.force_login(user)
+
+		response = self.client.post(
+			reverse("account-settings"),
+			{"email": "updated@example.com"},
+		)
+
+		self.assertRedirects(response, reverse("account-settings"))
+		user.refresh_from_db()
+		self.assertEqual(user.email, "updated@example.com")
+
+	def test_account_settings_rejects_another_users_email(self):
+		self.create_user("other-user", email="taken@example.com")
+		user = self.create_user("settings-user", email="mine@example.com")
+		self.client.force_login(user)
+
+		response = self.client.post(
+			reverse("account-settings"),
+			{"email": "TAKEN@example.com"},
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(
+			response,
+			"An account with this email already exists.",
+		)
+		user.refresh_from_db()
+		self.assertEqual(user.email, "mine@example.com")
+
+	def test_existing_account_without_email_sees_a_reminder(self):
+		user = self.create_user("no-email-user")
+		self.client.force_login(user)
+
+		response = self.client.get(reverse("home"))
+
+		self.assertContains(response, "Add an email address")
+		self.assertContains(response, reverse("account-settings"))
+
+	def test_login_page_offers_reset_and_password_visibility(self):
+		response = self.client.get(reverse("login"))
+
+		self.assertContains(response, reverse("password_reset"))
+		self.assertContains(response, "Forgot your password?")
+		self.assertContains(response, "cards/js/password_toggle.js")
+
+	def test_password_pages_use_the_app_layout(self):
+		user = self.create_user("layout-user", email="layout@example.com")
+		self.client.force_login(user)
+
+		for url, heading in (
+			(reverse("password_reset"), "ACCOUNT RECOVERY"),
+			(reverse("password_change"), "ACCOUNT SECURITY"),
+		):
+			with self.subTest(url=url):
+				response = self.client.get(url)
+				self.assertEqual(response.status_code, 200)
+				self.assertContains(response, heading)
+				self.assertContains(response, "auth-panel")
+				self.assertTemplateUsed(response, "cards/base_cards.html")
+
+	@override_settings(
+		EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+	)
+	def test_password_reset_sends_a_link_and_changes_the_password(self):
+		user = self.create_user(
+			"reset-user",
+			email="reset@example.com",
+		)
+
+		response = self.client.post(
+			reverse("password_reset"),
+			{"email": "reset@example.com"},
+		)
+
+		self.assertRedirects(response, reverse("password_reset_done"))
+		self.assertEqual(len(mail.outbox), 1)
+		self.assertEqual(mail.outbox[0].to, ["reset@example.com"])
+		self.assertEqual(
+			mail.outbox[0].subject,
+			"Reset your Flashcards password",
+		)
+
+		match = re.search(
+			r"/accounts/password-reset/confirm/[^\s]+",
+			mail.outbox[0].body,
+		)
+		self.assertIsNotNone(match)
+		response = self.client.get(match.group(0))
+		self.assertEqual(response.status_code, 302)
+
+		new_password = "Another-Correct-Horse-93!"
+		response = self.client.post(
+			response.url,
+			{
+				"new_password1": new_password,
+				"new_password2": new_password,
+			},
+		)
+
+		self.assertRedirects(response, reverse("password_reset_complete"))
+		user.refresh_from_db()
+		self.assertTrue(user.check_password(new_password))
+
+	@override_settings(
+		EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+	)
+	def test_password_reset_does_not_email_unknown_addresses(self):
+		response = self.client.post(
+			reverse("password_reset"),
+			{"email": "unknown@example.com"},
+		)
+
+		self.assertRedirects(response, reverse("password_reset_done"))
+		self.assertEqual(len(mail.outbox), 0)
+
+	def test_idle_session_is_logged_out(self):
+		user = self.create_user("idle-user")
+		self.client.force_login(user)
+		session = self.client.session
+		session["last_activity"] = time.time() - 301
+		session.save()
+
+		response = self.client.get(reverse("home"))
+
+		self.assertRedirects(
+			response,
+			f"{reverse('login')}?reason=idle",
+		)
+		self.assertNotIn("_auth_user_id", self.client.session)
+
+	def test_activity_keeps_the_session_alive(self):
+		user = self.create_user("active-user")
+		self.client.force_login(user)
+
+		response = self.client.get(reverse("home"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn("last_activity", self.client.session)
+
+	def test_idle_logout_endpoint_clears_the_session(self):
+		user = self.create_user("idle-endpoint-user")
+		self.client.force_login(user)
+
+		response = self.client.post(reverse("idle-logout"))
+
+		self.assertRedirects(
+			response,
+			f"{reverse('login')}?reason=idle",
+		)
+		self.assertNotIn("_auth_user_id", self.client.session)
+
+	def test_tab_session_expired_endpoint_clears_the_session(self):
+		user = self.create_user("tab-endpoint-user")
+		self.client.force_login(user)
+
+		response = self.client.post(reverse("tab-session-expired"))
+
+		self.assertRedirects(
+			response,
+			f"{reverse('login')}?reason=expired",
+		)
+		self.assertNotIn("_auth_user_id", self.client.session)
+
+	def test_session_heartbeat_requires_authentication(self):
+		response = self.client.post(reverse("session-heartbeat"))
+
+		self.assertEqual(response.status_code, 401)
+
+	def test_session_heartbeat_updates_activity(self):
+		user = self.create_user("heartbeat-user")
+		self.client.force_login(user)
+
+		response = self.client.post(reverse("session-heartbeat"))
+
+		self.assertEqual(response.status_code, 204)
+		self.assertIn("last_activity", self.client.session)
+
+	def test_tab_session_start_clears_the_login_handshake(self):
+		user = self.create_user("tab-start-user")
+		self.client.force_login(user)
+		self.assertIn("tab_session_handshake", self.client.session)
+
+		response = self.client.post(reverse("tab-session-start"))
+
+		self.assertEqual(response.status_code, 204)
+		self.assertNotIn("tab_session_handshake", self.client.session)

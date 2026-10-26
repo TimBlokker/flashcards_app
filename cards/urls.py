@@ -13,6 +13,31 @@ urlpatterns = [
         name="signup",
     ),
     path(
+        "accounts/settings/",
+        views.AccountSettingsView.as_view(),
+        name="account-settings",
+    ),
+    path(
+        "accounts/session/idle/",
+        views.IdleLogoutView.as_view(),
+        name="idle-logout",
+    ),
+    path(
+        "accounts/session/expired/",
+        views.TabSessionExpiredView.as_view(),
+        name="tab-session-expired",
+    ),
+    path(
+        "accounts/session/heartbeat/",
+        views.SessionHeartbeatView.as_view(),
+        name="session-heartbeat",
+    ),
+    path(
+        "accounts/session/start/",
+        views.TabSessionStartView.as_view(),
+        name="tab-session-start",
+    ),
+    path(
         "dictionary/suggest/",
         views.dictionary_suggestions,
         name="dictionary-suggest",

@@ -1,0 +1,23 @@
+{% extends "cards/base_cards.html" %}
+{% block content %}
+    <div class="auth-wrap">
+        <section class="auth-panel">
+            <p class="eyebrow">ACCOUNT</p>
+            <h1>Account settings</h1>
+            <p class="auth-intro">Manage the email address used for password recovery.</p>
+            <dl class="account-summary">
+                <dt>Username</dt>
+                <dd>{{ user.username }}</dd>
+            </dl>
+            <form method="post">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit">Save email</button>
+            </form>
+            <div class="auth-divider"></div>
+            <h2>Password</h2>
+            <p class="auth-intro">Change your password at any time. You'll need your current password.</p>
+            <a class="button button-secondary" href="{% url 'password_change' %}">Change password</a>
+        </section>
+    </div>
+{% endblock %}

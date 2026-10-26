@@ -2,12 +2,57 @@
 import re
 
 from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import UserCreationForm
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from .models import BOXES, Card, DictionaryEntry, StudyReminder
 from .card_import import parse_card_import
 from .arabic import contains_arabic, contains_latin
+
+
+class SignUpForm(UserCreationForm):
+    email = forms.EmailField(
+        required=True,
+        label="Email address",
+        help_text="Used to reset your password if you forget it.",
+        widget=forms.EmailInput(attrs={"autocomplete": "email"}),
+    )
+
+    class Meta(UserCreationForm.Meta):
+        model = get_user_model()
+        fields = ("username", "email")
+
+    field_order = ["username", "email", "password1", "password2"]
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        if get_user_model().objects.filter(email__iexact=email).exists():
+            raise ValidationError("An account with this email already exists.")
+        return email
+
+
+class AccountEmailForm(forms.ModelForm):
+    email = forms.EmailField(
+        required=True,
+        label="Email address",
+        help_text="Used to reset your password if you forget it.",
+        widget=forms.EmailInput(attrs={"autocomplete": "email"}),
+    )
+
+    class Meta:
+        model = get_user_model()
+        fields = ("email",)
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        duplicates = get_user_model().objects.filter(email__iexact=email)
+        if self.instance.pk:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise ValidationError("An account with this email already exists.")
+        return email
 
 
 class CardForm(forms.ModelForm):
