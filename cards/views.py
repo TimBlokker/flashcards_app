@@ -1,12 +1,14 @@
 from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.views import LoginView as DjangoLoginView
 from django.contrib import messages
 from django.db import IntegrityError, transaction
 from django.db.models import OuterRef, Subquery
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.csrf import csrf_failure as default_csrf_failure
 from django.views.generic import (
     ListView,
@@ -16,7 +18,14 @@ from django.views.generic import (
     View,
 )
 from django.views.generic.edit import FormView
-from .models import BOXES, Card, DictionaryEntry, StudyReminder
+from .email_verification import send_verification_email
+from .models import (
+    BOXES,
+    Card,
+    DictionaryEntry,
+    EmailVerification,
+    StudyReminder,
+)
 from .levels import level_ladder
 from .progress import (
     due_card_count,
@@ -101,6 +110,20 @@ def dictionary_suggestions(request):
     return JsonResponse({"results": list(results)})
 
 
+class EmailSetupLoginView(DjangoLoginView):
+    """Prompt accounts without an email address to add one after login."""
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        user = form.get_user()
+        if (user.email or "").strip():
+            self.request.session.pop("email_setup_required", None)
+            return response
+
+        self.request.session["email_setup_required"] = True
+        return redirect("complete-email")
+
+
 class SignUpView(FormView):
     template_name = "registration/signup.html"
     form_class = SignUpForm
@@ -112,6 +135,17 @@ class SignUpView(FormView):
             if user.get_username() == settings.LEGACY_CARD_USERNAME:
                 Card.objects.filter(user__isnull=True).update(user=user)
         login(self.request, user)
+        if send_verification_email(self.request, user):
+            messages.success(
+                self.request,
+                f"We sent a verification link to {user.email}.",
+            )
+        else:
+            messages.warning(
+                self.request,
+                "Your account was created, but we couldn't send the "
+                "verification email. Resend it from Account settings.",
+            )
         return super().form_valid(form)
 
 
@@ -125,10 +159,152 @@ class AccountSettingsView(LoginRequiredMixin, FormView):
         kwargs["instance"] = self.request.user
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["email_verification"] = getattr(
+            self.request.user,
+            "email_verification",
+            None,
+        )
+        context["email_settings_page"] = True
+        return context
+
     def form_valid(self, form):
-        form.save()
-        messages.success(self.request, "Your email address has been updated.")
+        previous_email = (self.request.user.email or "").casefold()
+        user = form.save()
+        self.request.session.pop("email_setup_required", None)
+        email_changed = (user.email or "").casefold() != previous_email
+        verification = getattr(user, "email_verification", None)
+        was_verified = bool(verification and verification.is_verified)
+        sent = send_verification_email(self.request, user)
+
+        if email_changed:
+            if sent:
+                messages.success(
+                    self.request,
+                    "Email updated. Check your inbox to verify the new address.",
+                )
+            else:
+                messages.warning(
+                    self.request,
+                    "Email updated, but we couldn't send the verification "
+                    "message. Try resending it below.",
+                )
+        elif not was_verified and sent:
+            messages.success(
+                self.request,
+                f"Verification email sent to {user.email}.",
+            )
+        else:
+            messages.success(self.request, "Your email address is up to date.")
         return super().form_valid(form)
+
+
+class CompleteEmailView(LoginRequiredMixin, FormView):
+    template_name = "cards/auth/complete_email.html"
+    form_class = AccountEmailForm
+    success_url = reverse_lazy("home")
+
+    def dispatch(self, request, *args, **kwargs):
+        if (
+            request.user.is_authenticated
+            and (request.user.email or "").strip()
+        ):
+            return redirect("home")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = self.request.user
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["email_setup"] = True
+        return context
+
+    def form_valid(self, form):
+        user = form.save()
+        self.request.session.pop("email_setup_required", None)
+        if send_verification_email(self.request, user):
+            messages.success(
+                self.request,
+                f"Email saved. We sent a verification link to {user.email}.",
+            )
+        else:
+            messages.warning(
+                self.request,
+                "Email saved, but we couldn't send the verification email. "
+                "Resend it from Account settings.",
+            )
+        return super().form_valid(form)
+
+
+class ResendEmailVerificationView(LoginRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        if not (request.user.email or "").strip():
+            return redirect("complete-email")
+
+        verification = getattr(request.user, "email_verification", None)
+        if verification and verification.is_verified:
+            messages.info(request, "Your email address is already verified.")
+        elif send_verification_email(request, request.user):
+            messages.success(
+                request,
+                f"Verification email sent to {request.user.email}.",
+            )
+        else:
+            messages.error(
+                request,
+                "We couldn't send the verification email. Please try again.",
+            )
+        return redirect("account-settings")
+
+
+class VerifyEmailView(View):
+    template_name = "cards/auth/email_verification_result.html"
+
+    def get(self, request, token, *args, **kwargs):
+        verification = (
+            EmailVerification.objects.filter(token=token)
+            .select_related("user")
+            .first()
+        )
+        context = {"verified": False, "reason": "invalid"}
+
+        if verification is None:
+            return render(request, self.template_name, context)
+
+        user = verification.user
+        email = verification.email
+        if email.casefold() != (user.email or "").casefold():
+            context = {
+                "verified": False,
+                "reason": "changed",
+                "email": email,
+            }
+        elif verification.verified_at:
+            context = {
+                "verified": True,
+                "reason": "already",
+                "email": email,
+            }
+        elif verification.is_expired:
+            context = {
+                "verified": False,
+                "reason": "expired",
+                "email": email,
+            }
+        else:
+            verification.verified_at = timezone.now()
+            verification.save(update_fields=["verified_at"])
+            context = {
+                "verified": True,
+                "reason": "verified",
+                "email": email,
+            }
+
+        return render(request, self.template_name, context)
 
 
 class IdleLogoutView(View):

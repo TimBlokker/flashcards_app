@@ -1,0 +1,27 @@
+{% extends "cards/base_cards.html" %}
+{% block title %}Add your email{% endblock %}
+{% block content %}
+    <div class="auth-wrap">
+        <section class="auth-panel">
+            <p class="eyebrow">ONE MORE STEP</p>
+            <h1>Add your email address</h1>
+            <p class="auth-intro">
+                Before you continue, save an email address for your account.
+                We'll send a verification link so you can reset your password
+                if you ever forget it.
+            </p>
+            <form method="post">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit">Save email</button>
+            </form>
+            <p class="auth-help">
+                You can change this later under Account settings.
+            </p>
+            <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="auth-link-button">Log out instead</button>
+            </form>
+        </section>
+    </div>
+{% endblock %}

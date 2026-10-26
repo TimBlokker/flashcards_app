@@ -3,7 +3,7 @@ import re
 
 from django import forms
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import PasswordResetForm, UserCreationForm
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 
@@ -16,7 +16,7 @@ class SignUpForm(UserCreationForm):
     email = forms.EmailField(
         required=True,
         label="Email address",
-        help_text="Used to reset your password if you forget it.",
+        help_text="We'll send a verification link. Your email is used to reset your password.",
         widget=forms.EmailInput(attrs={"autocomplete": "email"}),
     )
 
@@ -37,7 +37,7 @@ class AccountEmailForm(forms.ModelForm):
     email = forms.EmailField(
         required=True,
         label="Email address",
-        help_text="Used to reset your password if you forget it.",
+        help_text="We'll send a verification link. Your email is used to reset your password.",
         widget=forms.EmailInput(attrs={"autocomplete": "email"}),
     )
 
@@ -53,6 +53,16 @@ class AccountEmailForm(forms.ModelForm):
         if duplicates.exists():
             raise ValidationError("An account with this email already exists.")
         return email
+
+
+class VerifiedEmailPasswordResetForm(PasswordResetForm):
+    """Only send reset links to email addresses the user has verified."""
+
+    def get_users(self, email):
+        for user in super().get_users(email):
+            verification = getattr(user, "email_verification", None)
+            if verification and verification.is_verified:
+                yield user
 
 
 class CardForm(forms.ModelForm):

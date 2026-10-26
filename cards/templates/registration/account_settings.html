@@ -8,12 +8,34 @@
             <dl class="account-summary">
                 <dt>Username</dt>
                 <dd>{{ user.username }}</dd>
+                <dt>Email</dt>
+                <dd>
+                    {% if user.email %}
+                        {{ user.email }}
+                        {% if email_is_verified %}
+                            <span class="status-pill status-pill-ok">Verified</span>
+                        {% else %}
+                            <span class="status-pill status-pill-pending">Not verified</span>
+                        {% endif %}
+                    {% else %}
+                        Not set
+                    {% endif %}
+                </dd>
             </dl>
             <form method="post">
                 {% csrf_token %}
                 {{ form.as_p }}
                 <button type="submit">Save email</button>
             </form>
+            {% if email_needs_verification %}
+                <div class="auth-notice">
+                    <p>Check your inbox for the verification link.</p>
+                    <form method="post" action="{% url 'resend-email-verification' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="button button-secondary">Resend verification email</button>
+                    </form>
+                </div>
+            {% endif %}
             <div class="auth-divider"></div>
             <h2>Password</h2>
             <p class="auth-intro">Change your password at any time. You'll need your current password.</p>

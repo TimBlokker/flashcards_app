@@ -1,0 +1,48 @@
+{% extends "cards/base_cards.html" %}
+{% block title %}Email verification{% endblock %}
+{% block content %}
+    <div class="auth-wrap">
+        <section class="auth-panel">
+            {% if verified %}
+                <p class="eyebrow">EMAIL VERIFIED</p>
+                <h1>Email confirmed</h1>
+                <p class="auth-intro">
+                    {{ email }} is now verified. You can use it to reset your
+                    password if you forget it.
+                </p>
+                {% if user.is_authenticated %}
+                    <p class="auth-switch">
+                        <a class="button button-primary" href="{% url 'account-settings' %}">Account settings</a>
+                    </p>
+                {% else %}
+                    <p class="auth-switch">
+                        <a class="button button-primary" href="{% url 'login' %}">Log in</a>
+                    </p>
+                {% endif %}
+            {% else %}
+                <p class="eyebrow">VERIFICATION FAILED</p>
+                <h1>We couldn't verify that link</h1>
+                {% if reason == "expired" %}
+                    <p class="auth-intro">
+                        The verification link for {{ email }} has expired.
+                        Log in and resend it from Account settings.
+                    </p>
+                {% elif reason == "changed" %}
+                    <p class="auth-intro">
+                        The email address on this account changed after the
+                        link was sent. Log in and resend the verification from
+                        Account settings.
+                    </p>
+                {% else %}
+                    <p class="auth-intro">
+                        This verification link is invalid or has already been
+                        used. Log in and resend it from Account settings.
+                    </p>
+                {% endif %}
+                <p class="auth-switch">
+                    <a href="{% url 'login' %}">Back to log in</a>
+                </p>
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}

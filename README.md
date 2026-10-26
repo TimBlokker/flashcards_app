@@ -16,13 +16,26 @@ Run the tests with `bin/python manage.py test cards`.
 ## Accounts, password reset and session security
 
 Every account has an email address, required at signup, used for password
-recovery. Existing accounts can add or change theirs under **Account settings**
-in the account menu. While an account has no email, a reminder banner appears in
-the app.
+recovery. Existing accounts are sent to a required **Add your email address**
+page on their next authenticated request. Users can change their address under
+**Account settings** in the account menu.
+
+### Email verification
+
+- Signup and email changes send a verification link. The address must be
+  verified before it can be used for password reset.
+- Verification links expire after 24 hours (`EMAIL_VERIFICATION_TIMEOUT`, in
+  seconds). Users can resend a link from the reminder banner or **Account
+  settings**.
+- Verification does not block login. Until the address is verified, a reminder
+  banner appears in the app.
+- Existing accounts with an email address were marked verified by the data
+  migration. New addresses always require verification.
 
 ### Password reset
 
 - **Forgot your password?** on the login page sends a one-hour reset link.
+  Reset emails are only sent to verified addresses.
 - In development the email is printed to the terminal by default (Django's
   console backend). To send real email, set these environment variables:
 
@@ -39,9 +52,9 @@ the app.
   Use `EMAIL_USE_SSL=1` instead of `EMAIL_USE_TLS` for an implicit TLS
   connection; do not enable both. Reset links expire after one hour
   (`PASSWORD_RESET_TIMEOUT`).
-- Users who have not saved an email address cannot request a reset themselves.
-  They can add one after logging in, or an administrator can set it in Django
-  admin.
+- Users who have not saved and verified an email address cannot request a reset
+  themselves. They can add or resend verification after logging in, or an
+  administrator can set it in Django admin.
 
 ### Automatic logout
 

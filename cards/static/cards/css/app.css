@@ -1299,6 +1299,64 @@ button.dictionary-suggestion:focus-visible {
     font-weight: 800;
 }
 
+.account-nudge form {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.account-nudge button {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--primary-dark);
+    font-size: 0.88rem;
+    font-weight: 800;
+}
+
+.account-nudge button:hover {
+    transform: none;
+    background: transparent;
+    color: var(--primary-dark);
+}
+
+.status-pill {
+    display: inline-block;
+    margin-left: 0.45rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
+}
+
+.status-pill-ok {
+    background: #e3f7ea;
+    color: #207a45;
+}
+
+.status-pill-pending {
+    background: #fff2d9;
+    color: #8a5a00;
+}
+
+.auth-link-button {
+    min-height: 0;
+    margin: 0.75rem 0 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.auth-link-button:hover {
+    transform: none;
+    background: transparent;
+    color: var(--primary-dark);
+}
+
 .password-requirements {
     margin: 1.25rem 0;
     padding: 1rem 1.1rem;

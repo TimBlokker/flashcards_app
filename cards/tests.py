@@ -24,7 +24,13 @@ from django.urls import NoReverseMatch, reverse
 
 from cards.forms import CardForm
 from cards.levels import LEVELS, level_for_points, level_progress
-from cards.models import Card, DictionaryEntry, StudyProgress, StudyReminder
+from cards.models import (
+	Card,
+	DictionaryEntry,
+	EmailVerification,
+	StudyProgress,
+	StudyReminder,
+)
 from cards.progress import progress_summary
 from cards.reminders import build_reminder_message
 from cards.whatsapp import WhatsAppNotConfigured, whatsapp_deep_link
@@ -172,6 +178,7 @@ class AccountDeckTests(TestCase):
 	def test_login_redirects_to_home(self):
 		user = get_user_model().objects.create_user(
 			"login-redirect-user",
+			email="login-redirect@example.com",
 			password="Correct-Horse-92!",
 		)
 
@@ -186,6 +193,7 @@ class AccountDeckTests(TestCase):
 		client = self.client_class(enforce_csrf_checks=True)
 		user = get_user_model().objects.create_user(
 			"csrf-cookie-login-user",
+			email="csrf-cookie@example.com",
 			password="Correct-Horse-92!",
 		)
 		login_page = client.get(reverse("login"))
@@ -1751,7 +1759,7 @@ class ArabicVocalizationTests(TestCase):
 class ConsolidateQuestionMigrationTests(TransactionTestCase):
 	latest_migration = [(
 		"cards",
-		"0015_reorient_arabic_cards_and_expand_questions",
+		"0017_emailverification",
 	)]
 
 	def test_migration_handles_collisions_and_restores_questions_on_rollback(self):
@@ -2461,9 +2469,21 @@ class SendStudyRemindersTests(TestCase):
 class AuthenticationFeatureTests(TestCase):
 	password = "Correct-Horse-92!"
 
+	def setUp(self):
+		mail.outbox.clear()
+
 	def create_user(self, username, **kwargs):
 		kwargs.setdefault("password", self.password)
 		return get_user_model().objects.create_user(username, **kwargs)
+
+	def verify_email(self, user, *, verified=True, sent_at=None):
+		return EmailVerification.objects.create(
+			user=user,
+			email=user.email,
+			token=f"token-{user.pk}",
+			sent_at=sent_at or timezone.now(),
+			verified_at=timezone.now() if verified else None,
+		)
 
 	def test_signup_requires_an_email_address(self):
 		response = self.client.post(
@@ -2496,6 +2516,15 @@ class AuthenticationFeatureTests(TestCase):
 		user = get_user_model().objects.get(username="new-user")
 		self.assertEqual(user.email, "new.user@example.com")
 		self.assertIn("_auth_user_id", self.client.session)
+		self.assertEqual(len(mail.outbox), 1)
+		self.assertEqual(mail.outbox[0].to, ["new.user@example.com"])
+		self.assertEqual(
+			mail.outbox[0].subject,
+			"Verify your Flashcards email",
+		)
+		verification = EmailVerification.objects.get(user=user)
+		self.assertEqual(verification.email, "new.user@example.com")
+		self.assertFalse(verification.is_verified)
 
 	def test_signup_rejects_a_duplicate_email_case_insensitively(self):
 		self.create_user("existing-user", email="taken@example.com")
@@ -2520,7 +2549,11 @@ class AuthenticationFeatureTests(TestCase):
 		)
 
 	def test_account_settings_updates_the_email_address(self):
-		user = self.create_user("settings-user")
+		user = self.create_user(
+			"settings-user",
+			email="old@example.com",
+		)
+		self.verify_email(user)
 		self.client.force_login(user)
 
 		response = self.client.post(
@@ -2531,6 +2564,10 @@ class AuthenticationFeatureTests(TestCase):
 		self.assertRedirects(response, reverse("account-settings"))
 		user.refresh_from_db()
 		self.assertEqual(user.email, "updated@example.com")
+		verification = EmailVerification.objects.get(user=user)
+		self.assertEqual(verification.email, "updated@example.com")
+		self.assertFalse(verification.is_verified)
+		self.assertEqual(len(mail.outbox), 1)
 
 	def test_account_settings_rejects_another_users_email(self):
 		self.create_user("other-user", email="taken@example.com")
@@ -2550,14 +2587,117 @@ class AuthenticationFeatureTests(TestCase):
 		user.refresh_from_db()
 		self.assertEqual(user.email, "mine@example.com")
 
-	def test_existing_account_without_email_sees_a_reminder(self):
+	def test_existing_account_without_email_is_forced_to_add_one(self):
 		user = self.create_user("no-email-user")
+
+		response = self.client.post(
+			reverse("login"),
+			{"username": user.username, "password": self.password},
+		)
+
+		self.assertRedirects(response, reverse("complete-email"))
+		self.assertRedirects(
+			self.client.get(reverse("home")),
+			reverse("complete-email"),
+		)
+
+		response = self.client.get(reverse("complete-email"))
+		self.assertContains(response, "Add your email address")
+		self.assertNotContains(response, "Add an email address so you can reset")
+
+		response = self.client.post(
+			reverse("complete-email"),
+			{"email": "new-email@example.com"},
+		)
+
+		self.assertRedirects(response, reverse("home"))
+		user.refresh_from_db()
+		self.assertEqual(user.email, "new-email@example.com")
+		verification = EmailVerification.objects.get(user=user)
+		self.assertFalse(verification.is_verified)
+		self.assertEqual(len(mail.outbox), 1)
+		self.assertEqual(
+			self.client.get(reverse("home")).status_code,
+			200,
+		)
+
+	def test_email_verification_link_marks_the_address_verified(self):
+		user = self.create_user(
+			"verify-user",
+			email="verify@example.com",
+		)
+		self.verify_email(user, verified=False)
+
+		response = self.client.get(
+			reverse("verify-email", args=[f"token-{user.pk}"]),
+		)
+
+		self.assertContains(response, "Email confirmed")
+		verification = EmailVerification.objects.get(user=user)
+		self.assertTrue(verification.is_verified)
+
+	def test_expired_verification_link_is_rejected(self):
+		user = self.create_user(
+			"expired-verify-user",
+			email="expired@example.com",
+		)
+		self.verify_email(
+			user,
+			verified=False,
+			sent_at=timezone.now() - timedelta(days=2),
+		)
+
+		response = self.client.get(
+			reverse("verify-email", args=[f"token-{user.pk}"]),
+		)
+
+		self.assertContains(response, "has expired")
+		self.assertFalse(
+			EmailVerification.objects.get(user=user).is_verified,
+		)
+
+	def test_invalid_verification_token_is_rejected(self):
+		response = self.client.get(
+			reverse("verify-email", args=["not-a-real-token"]),
+		)
+
+		self.assertContains(response, "invalid")
+
+	def test_account_settings_shows_unverified_email_status(self):
+		user = self.create_user(
+			"status-user",
+			email="status@example.com",
+		)
+		self.verify_email(user, verified=False)
 		self.client.force_login(user)
 
-		response = self.client.get(reverse("home"))
+		response = self.client.get(reverse("account-settings"))
 
-		self.assertContains(response, "Add an email address")
-		self.assertContains(response, reverse("account-settings"))
+		self.assertContains(response, "Not verified")
+		self.assertContains(response, "Resend verification email")
+
+	def test_resend_verification_email_sends_a_new_link(self):
+		user = self.create_user(
+			"resend-user",
+			email="resend@example.com",
+		)
+		verification = self.verify_email(
+			user,
+			verified=False,
+			sent_at=timezone.now() - timedelta(days=1),
+		)
+		old_token = verification.token
+		self.client.force_login(user)
+
+		response = self.client.post(
+			reverse("resend-email-verification"),
+		)
+
+		self.assertRedirects(response, reverse("account-settings"))
+		self.assertEqual(len(mail.outbox), 1)
+		verification.refresh_from_db()
+		self.assertNotEqual(verification.token, old_token)
+		self.assertFalse(verification.is_verified)
 
 	def test_login_page_offers_reset_and_password_visibility(self):
 		response = self.client.get(reverse("login"))
@@ -2589,6 +2729,7 @@ class AuthenticationFeatureTests(TestCase):
 			"reset-user",
 			email="reset@example.com",
 		)
+		self.verify_email(user)
 
 		response = self.client.post(
 			reverse("password_reset"),
@@ -2636,6 +2777,21 @@ class AuthenticationFeatureTests(TestCase):
 		self.assertRedirects(response, reverse("password_reset_done"))
 		self.assertEqual(len(mail.outbox), 0)
 
+	def test_password_reset_does_not_email_unverified_addresses(self):
+		user = self.create_user(
+			"unverified-reset-user",
+			email="unverified-reset@example.com",
+		)
+		self.verify_email(user, verified=False)
+
+		response = self.client.post(
+			reverse("password_reset"),
+			{"email": "unverified-reset@example.com"},
+		)
+
+		self.assertRedirects(response, reverse("password_reset_done"))
+		self.assertEqual(len(mail.outbox), 0)
+
 	def test_idle_session_is_logged_out(self):
 		user = self.create_user("idle-user")
 		self.client.force_login(user)
@@ -2652,7 +2808,10 @@ class AuthenticationFeatureTests(TestCase):
 		self.assertNotIn("_auth_user_id", self.client.session)
 
 	def test_activity_keeps_the_session_alive(self):
-		user = self.create_user("active-user")
+		user = self.create_user(
+			"active-user",
+			email="active@example.com",
+		)
 		self.client.force_login(user)
 
 		response = self.client.get(reverse("home"))

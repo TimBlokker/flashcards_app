@@ -56,3 +56,41 @@ class IdleSessionTimeoutMiddleware:
             request.session["last_activity"] = now
 
         return self.get_response(request)
+
+
+class RequireEmailMiddleware:
+    """Send authenticated users without an email address to setup."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+        static_url = settings.STATIC_URL
+        if not static_url.startswith("/"):
+            static_url = f"/{static_url}"
+        self.ignored_prefixes = (static_url, "/media/", "/admin/")
+        self.allowed_paths = {
+            reverse("logout"),
+            reverse("idle-logout"),
+            reverse("tab-session-expired"),
+            reverse("session-heartbeat"),
+            reverse("tab-session-start"),
+        }
+        self.complete_email_url = reverse("complete-email")
+        self.allowed_prefixes = (self.complete_email_url,)
+
+    def __call__(self, request):
+        if request.path_info.startswith(self.ignored_prefixes):
+            return self.get_response(request)
+
+        if request.user.is_authenticated and request.session.get(
+            "email_setup_required"
+        ):
+            if (request.user.email or "").strip():
+                request.session.pop("email_setup_required", None)
+            elif (
+                request.path_info not in self.allowed_paths
+                and not request.path_info.startswith(self.allowed_prefixes)
+            ):
+                return redirect(self.complete_email_url)
+
+        return self.get_response(request)

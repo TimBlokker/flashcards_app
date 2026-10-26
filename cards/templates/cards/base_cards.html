@@ -126,11 +126,21 @@
         </header>
         {% include "cards/mobile_navigation.html" %}
     {% endif %}
-    {% if user.is_authenticated and not user.email and not learning_mode %}
-        <div class="account-nudge" role="status">
-            <span>Add an email address so you can reset your password if you forget it.</span>
-            <a href="{% url 'account-settings' %}">Add email</a>
-        </div>
+    {% if user.is_authenticated and not email_setup and not learning_mode %}
+        {% if not user.email %}
+            <div class="account-nudge" role="status">
+                <span>Add an email address so you can reset your password if you forget it.</span>
+                <a href="{% url 'complete-email' %}">Add email</a>
+            </div>
+        {% elif email_needs_verification and not email_settings_page %}
+            <div class="account-nudge" role="status">
+                <span>Verify <strong>{{ user.email }}</strong> to enable password reset.</span>
+                <form method="post" action="{% url 'resend-email-verification' %}">
+                    {% csrf_token %}
+                    <button type="submit">Resend verification email</button>
+                </form>
+            </div>
+        {% endif %}
     {% endif %}
     <main class="page-shell{% if learning_mode %} learning-shell{% endif %}">
         {% if messages %}

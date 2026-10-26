@@ -2,6 +2,7 @@ from os import times
 from time import time
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from itertools import chain
 import datetime
 from django.core.exceptions import ValidationError
@@ -115,3 +116,33 @@ class DictionaryEntry(models.Model):
         if not self.search_key:
             self.search_key = self.headword.casefold()
         super().save(*args, **kwargs)
+
+
+class EmailVerification(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name="email_verification",
+        on_delete=models.CASCADE,
+    )
+    email = models.EmailField()
+    token = models.CharField(max_length=64, unique=True)
+    sent_at = models.DateTimeField(default=timezone.now)
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user} email verification"
+
+    @property
+    def is_verified(self):
+        return bool(
+            self.verified_at
+            and self.email
+            and self.email.casefold() == (self.user.email or "").casefold()
+        )
+
+    @property
+    def is_expired(self):
+        timeout = getattr(settings, "EMAIL_VERIFICATION_TIMEOUT", 86400)
+        return timezone.now() - self.sent_at > datetime.timedelta(
+            seconds=timeout,
+        )

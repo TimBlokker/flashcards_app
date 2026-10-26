@@ -17,6 +17,13 @@ def session_ui(request):
         if not handshake:
             request.session.pop("tab_session_handshake", None)
 
+    email_is_verified = False
+    email_needs_verification = False
+    if request.user.is_authenticated and (request.user.email or "").strip():
+        verification = getattr(request.user, "email_verification", None)
+        email_is_verified = bool(verification and verification.is_verified)
+        email_needs_verification = not email_is_verified
+
     return {
         "idle_timeout_seconds": getattr(
             settings,
@@ -24,4 +31,6 @@ def session_ui(request):
             300,
         ),
         "tab_session_handshake": handshake,
+        "email_is_verified": email_is_verified,
+        "email_needs_verification": email_needs_verification,
     }

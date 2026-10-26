@@ -18,11 +18,14 @@ from django.contrib import admin
 from django.urls import path, include, reverse_lazy
 from django.contrib.auth import views as auth_views
 
+from cards.forms import VerifiedEmailPasswordResetForm
+from cards.views import EmailSetupLoginView
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path(
         "accounts/login/",
-        auth_views.LoginView.as_view(
+        EmailSetupLoginView.as_view(
             template_name="registration/login.html",
             next_page=reverse_lazy("home"),
         ),
@@ -39,6 +42,7 @@ urlpatterns = [
             template_name="cards/auth/password_reset_form.html",
             email_template_name="cards/auth/password_reset_email.txt",
             subject_template_name="cards/auth/password_reset_subject.txt",
+            form_class=VerifiedEmailPasswordResetForm,
             success_url=reverse_lazy("password_reset_done"),
         ),
         name="password_reset",

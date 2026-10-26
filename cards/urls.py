@@ -18,6 +18,21 @@ urlpatterns = [
         name="account-settings",
     ),
     path(
+        "accounts/email/",
+        views.CompleteEmailView.as_view(),
+        name="complete-email",
+    ),
+    path(
+        "accounts/email/resend/",
+        views.ResendEmailVerificationView.as_view(),
+        name="resend-email-verification",
+    ),
+    path(
+        "accounts/email/verify/<str:token>/",
+        views.VerifyEmailView.as_view(),
+        name="verify-email",
+    ),
+    path(
         "accounts/session/idle/",
         views.IdleLogoutView.as_view(),
         name="idle-logout",
